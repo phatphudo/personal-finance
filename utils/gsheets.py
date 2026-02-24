@@ -15,6 +15,8 @@ TAB_SETTINGS = "Settings"
 TAB_WORK_HOURS = "Work Hours"
 TAB_TRANSACTIONS = "Transactions"
 TAB_STARTING_BALANCES = "Monthly Starting Balances"
+TAB_CASH_IN = "Cash In"
+TAB_CASH_OUT = "Cash Out"
 
 # Resolve the service account JSON from the .secret/ folder next to this project
 _SECRET_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".secret")
@@ -63,6 +65,10 @@ def _get_or_create_worksheet(tab_name: str) -> gspread.Worksheet:
             )
         elif tab_name == TAB_STARTING_BALANCES:
             ws.append_row(["Month", "Account", "Starting Balance"])
+        elif tab_name == TAB_CASH_IN:
+            ws.append_row(["Date", "Month", "Description", "Amount"])
+        elif tab_name == TAB_CASH_OUT:
+            ws.append_row(["Date", "Month", "Description", "Category", "Amount"])
     return ws
 
 
@@ -182,6 +188,25 @@ def append_transaction(
     read_sheet.clear()
 
 
+def update_transaction_row(
+    sheet_row: int,
+    date: str,
+    tx_type: str,
+    account: str,
+    category: str,
+    amount: float,
+    description: str,
+):
+    """Update a specific literal row in the Transactions tab."""
+    ws = _get_or_create_worksheet(TAB_TRANSACTIONS)
+    ws.update(
+        values=[[date, tx_type, account, category, amount, description]],
+        range_name=f"A{sheet_row}:F{sheet_row}",
+        value_input_option="USER_ENTERED",
+    )
+    read_sheet.clear()
+
+
 def upsert_starting_balance(month: str, account: str, balance: float):
     """Insert or update a starting balance override."""
     ws = _get_or_create_worksheet(TAB_STARTING_BALANCES)
@@ -218,4 +243,116 @@ def write_settings(settings: dict):
         rows.append(row)
 
     ws.update(rows, value_input_option="USER_ENTERED")
+    read_sheet.clear()
+
+
+# ── Cash Counts helpers ───────────────────────────────────────────────────────
+
+TAB_CASH_COUNTS = "Cash Counts"
+
+
+def read_cash_counts() -> pd.DataFrame:
+    """Read the monthly cash physical counts tab.
+    Columns: Month (YYYY-MM-01), Source, Amount
+    """
+    df = read_sheet(TAB_CASH_COUNTS)
+    if df.empty:
+        return df
+    df["Month"] = pd.to_datetime(df["Month"], errors="coerce")
+    df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce").fillna(0)
+    return df
+
+
+def upsert_cash_count(month: str, source: str, amount: float):
+    """Insert or update a single cash count entry (month + source).
+    month should be 'YYYY-MM-01' format.
+    """
+    ws = _get_or_create_worksheet(TAB_CASH_COUNTS)
+    # Ensure header row exists
+    all_vals = ws.get_all_values()
+    if not all_vals:
+        ws.append_row(["Month", "Source", "Amount"])
+        all_vals = [["Month", "Source", "Amount"]]
+
+    for i, row in enumerate(all_vals[1:], start=2):
+        if len(row) >= 2 and row[0] == month and row[1] == source:
+            ws.update_cell(i, 3, amount)
+            read_sheet.clear()
+            return
+    ws.append_row([month, source, amount], value_input_option="USER_ENTERED")
+    read_sheet.clear()
+
+
+# ── Cash In / Cash Out tab helpers ────────────────────────────────────────────
+
+
+def read_cash_in() -> pd.DataFrame:
+    """Read the Cash In tab. Columns: Date, Month, Description, Amount."""
+    df = read_sheet(TAB_CASH_IN)
+    if df.empty:
+        return df
+    df["Date"] = pd.to_datetime(df["Date"], format="%m/%d/%Y", errors="coerce")
+    df["Month"] = pd.to_datetime(df["Month"], errors="coerce")
+    df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce").fillna(0)
+    return df.dropna(subset=["Date"])
+
+
+def read_cash_out() -> pd.DataFrame:
+    """Read the Cash Out tab. Columns: Date, Month, Description, Category, Amount."""
+    df = read_sheet(TAB_CASH_OUT)
+    if df.empty:
+        return df
+    df["Date"] = pd.to_datetime(df["Date"], format="%m/%d/%Y", errors="coerce")
+    df["Month"] = pd.to_datetime(df["Month"], errors="coerce")
+    df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce").fillna(0)
+    return df.dropna(subset=["Date"])
+
+
+def append_cash_in(date: str, month: str, description: str, amount: float):
+    """Append a row to the Cash In tab."""
+    ws = _get_or_create_worksheet(TAB_CASH_IN)
+    ws.append_row([date, month, description, amount], value_input_option="USER_ENTERED")
+    read_sheet.clear()
+
+
+def append_cash_out(
+    date: str, month: str, description: str, category: str, amount: float
+):
+    """Append a row to the Cash Out tab."""
+    ws = _get_or_create_worksheet(TAB_CASH_OUT)
+    ws.append_row(
+        [date, month, description, category, amount],
+        value_input_option="USER_ENTERED",
+    )
+    read_sheet.clear()
+
+
+def update_cash_in_row(
+    sheet_row: int, date: str, month: str, description: str, amount: float
+):
+    """Update a specific row in the Cash In tab by its sheet row number."""
+    ws = _get_or_create_worksheet(TAB_CASH_IN)
+    ws.update(
+        values=[[date, month, description, amount]],
+        range_name=f"A{sheet_row}:D{sheet_row}",
+        value_input_option="USER_ENTERED",
+    )
+    read_sheet.clear()
+
+
+def update_cash_out_row(
+    sheet_row: int,
+    date: str,
+    month: str,
+    description: str,
+    category: str,
+    amount: float,
+):
+    """Update a specific row in the Cash Out tab by its sheet row number."""
+    ws = _get_or_create_worksheet(TAB_CASH_OUT)
+    ws.update(
+        values=[[date, month, description, category, amount]],
+        range_name=f"A{sheet_row}:E{sheet_row}",
+        value_input_option="USER_ENTERED",
+    )
     read_sheet.clear()
