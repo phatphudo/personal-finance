@@ -1,0 +1,437 @@
+import pandas as pd
+import streamlit as st
+
+from utils.gsheets import (
+    append_cash_in,
+    append_cash_out,
+    append_debit_in,
+    update_cash_in_row,
+    update_cash_out_row,
+    upsert_cash_count,
+)
+
+_CAT_DEPOSIT_DEBIT = "Deposit to Debit"
+_CAT_ADD_VAULT = "Add to Vault"
+_CAT_SPENDING = "Spending"
+_OUT_CATEGORIES = [_CAT_SPENDING, _CAT_DEPOSIT_DEBIT, _CAT_ADD_VAULT]
+
+
+# ── Cash section ──────────────────────────────────────────────────────────────
+
+
+def render_cash(
+    ci_df,
+    co_df,
+    cc_df,
+    sel_year,
+    sel_mon,
+    month_key,
+    today,
+    cash_sources,
+    vault_source,
+    active_sources,
+    bank_accounts,
+):
+    if not cash_sources:
+        st.info("No Cash Sources configured. Add them in ⚙️ Settings.")
+        return
+
+    # ── Pull this month's cash transactions from dedicated tabs ──────────────────────
+    # Filter by the stored `Month` column (billing-period tag), NOT the raw Date.
+    # Transactions physically dated in adjacent months (e.g. Jan 29 → Feb period)
+    # will correctly appear under whichever month was selected when they were saved.
+    def _filter_month(df):
+        if df.empty:
+            return pd.DataFrame()
+        if "Month" in df.columns and not df["Month"].isna().all():
+            return df[
+                (df["Month"].dt.year == sel_year) & (df["Month"].dt.month == sel_mon)
+            ].copy()
+        # Fallback for rows saved before Month column existed
+        return df[
+            (df["Date"].dt.year == sel_year) & (df["Date"].dt.month == sel_mon)
+        ].copy()
+
+    income_tx = _filter_month(ci_df)
+    spending_tx = _filter_month(co_df)
+
+    total_income = income_tx["Amount"].sum() if not income_tx.empty else 0.0
+
+    regular_spending_tx = (
+        spending_tx[~spending_tx["Category"].isin([_CAT_DEPOSIT_DEBIT, _CAT_ADD_VAULT])]
+        if not spending_tx.empty
+        else pd.DataFrame()
+    )
+    deposit_tx = (
+        spending_tx[spending_tx["Category"] == _CAT_DEPOSIT_DEBIT]
+        if not spending_tx.empty
+        else pd.DataFrame()
+    )
+    vault_tx = (
+        spending_tx[spending_tx["Category"] == _CAT_ADD_VAULT]
+        if not spending_tx.empty
+        else pd.DataFrame()
+    )
+
+    total_spending = (
+        regular_spending_tx["Amount"].sum() if not regular_spending_tx.empty else 0.0
+    )
+    total_deposit = deposit_tx["Amount"].sum() if not deposit_tx.empty else 0.0
+    total_vault = vault_tx["Amount"].sum() if not vault_tx.empty else 0.0
+
+    # ── Remaining from previous month ──────────────────────────────────────
+    if sel_mon == 1:
+        prev_year, prev_mon = sel_year - 1, 12
+    else:
+        prev_year, prev_mon = sel_year, sel_mon - 1
+
+    prev_actual = 0.0
+    if not cc_df.empty:
+        prev_counts = cc_df[
+            (cc_df["Month"].dt.year == prev_year)
+            & (cc_df["Month"].dt.month == prev_mon)
+            & (cc_df["Source"].isin(active_sources))
+        ]
+        prev_actual = prev_counts["Amount"].sum()
+
+    override_key = f"cash_remaining_{month_key}"
+    if override_key not in st.session_state:
+        st.session_state[override_key] = prev_actual
+
+    remaining = st.session_state[override_key]
+    total_cash_in = remaining + total_income
+    total_cash_out = total_spending + total_deposit + total_vault
+    expected_balance = total_cash_in - total_cash_out
+
+    # ── Actual balance from physical counts ────────────────────────────────
+    actual_balance = 0.0
+    total_in_hand = 0.0
+    if not cc_df.empty:
+        month_counts = cc_df[
+            (cc_df["Month"].dt.year == sel_year) & (cc_df["Month"].dt.month == sel_mon)
+        ]
+        active_counts = month_counts[month_counts["Source"].isin(active_sources)]
+        actual_balance = active_counts["Amount"].sum()
+        total_in_hand = month_counts["Amount"].sum()
+
+    balance_diff = actual_balance - expected_balance
+
+    # ══════════════════════════════════════════════════════════════════
+    # METRICS — 2 columns: left = Cash Flow, right = Balance Snapshot
+    # ══════════════════════════════════════════════════════════════════
+    col_flow, col_bal = st.columns(2)
+
+    with col_flow:
+        st.markdown("##### 💸 Cash Flow")
+        f1, f2 = st.columns(2)
+        f1.metric("Total Income", f"${total_income:,.2f}")
+        f2.metric("Total Spending", f"${total_spending:,.2f}")
+        f3, f4 = st.columns(2)
+        f3.metric(
+            "Total Cash In",
+            f"${total_cash_in:,.2f}",
+            help="Previous month remaining + Total Income",
+        )
+        f4.metric(
+            "Total Cash Out",
+            f"${total_cash_out:,.2f}",
+            help="Spending + Deposit to Debit + Add to Vault",
+        )
+
+    with col_bal:
+        st.markdown("##### 📊 Balance Snapshot")
+        b1, b2 = st.columns(2)
+        b1.metric(
+            "Expected Balance", f"${expected_balance:,.2f}", help="Cash In − Cash Out"
+        )
+        b2.metric(
+            "Actual Balance",
+            f"${actual_balance:,.2f}",
+            help="Sum of physically counted active sources (excl. Vault)",
+        )
+        b3, b4 = st.columns(2)
+        diff_delta = (
+            f"+${balance_diff:,.2f}"
+            if balance_diff >= 0
+            else f"-${abs(balance_diff):,.2f}"
+        )
+        b3.metric(
+            "Difference",
+            f"${balance_diff:,.2f}",
+            delta=diff_delta,
+            delta_color="normal" if balance_diff >= 0 else "inverse",
+            help="Actual − Expected",
+        )
+        b4.metric(
+            "Total In Hand",
+            f"${total_in_hand:,.2f}",
+            help="Sum of all sources including Vault",
+        )
+
+    # ── Remaining override & physical counts ───────────────────────────────
+    with st.expander(
+        "⚙️ Settings: Remaining from Previous Month & Cash Counts", expanded=False
+    ):
+        st.caption(
+            f"**Remaining from previous month** defaults to ${prev_actual:,.2f} "
+            "(previous month's Actual Balance of active sources)."
+        )
+        c1, c2 = st.columns([2, 1])
+        new_remaining = c1.number_input(
+            "Override Remaining ($)",
+            value=float(remaining),
+            step=0.01,
+            format="%.2f",
+            key=f"remaining_input_{month_key}",
+        )
+        if c2.button(
+            "Apply", key=f"apply_remaining_{month_key}", use_container_width=True
+        ):
+            st.session_state[override_key] = new_remaining
+            st.rerun()
+
+        st.markdown("**Manual Cash Count by Bucket**")
+        count_cols = st.columns(len(cash_sources))
+        new_counts = {}
+        for i, src in enumerate(cash_sources):
+            cur = 0.0
+            if not cc_df.empty:
+                match = cc_df[
+                    (cc_df["Month"].dt.year == sel_year)
+                    & (cc_df["Month"].dt.month == sel_mon)
+                    & (cc_df["Source"] == src)
+                ]
+                if not match.empty:
+                    cur = float(match.iloc[0]["Amount"])
+            new_counts[src] = count_cols[i].number_input(
+                src,
+                value=cur,
+                min_value=0.0,
+                step=0.01,
+                format="%.2f",
+                key=f"cash_count_{month_key}_{src}",
+            )
+        if st.button("💾 Save Cash Counts", key=f"save_cash_counts_{month_key}"):
+            with st.spinner("Saving counts…"):
+                for src, amt in new_counts.items():
+                    upsert_cash_count(month_key, src, amt)
+            st.success("Cash counts saved!")
+            st.rerun()
+
+    st.markdown("---")
+
+    # ══════════════════════════════════════════════════════════════════
+    # INCOME / SPENDING TABLES — side by side
+    # ══════════════════════════════════════════════════════════════════
+    col_in, col_out = st.columns(2)
+
+    with col_in:
+        st.markdown("##### ⬆️ Cash In (Income)")
+        _cash_in_editor(income_tx, month_key, today)
+
+    with col_out:
+        st.markdown("##### ⬇️ Cash Out (Spending)")
+        _cash_out_editor(spending_tx, month_key, today, bank_accounts)
+
+
+def _build_in_display(income_tx):
+    """Prepare the Cash In dataframe for the data editor."""
+    cols = ["_SheetRow", "Date", "Description", "Amount"]
+    if income_tx.empty:
+        return pd.DataFrame(
+            {
+                "_SheetRow": pd.Series([], dtype="Int64"),
+                "Date": pd.Series([], dtype="str"),
+                "Description": pd.Series([], dtype="str"),
+                "Amount": pd.Series([], dtype="float"),
+            }
+        )
+    df = income_tx.copy().reset_index(drop=True)
+    df["Date"] = df["Date"].dt.strftime("%m/%d/%Y")
+    df["Description"] = df.get("Description", "").fillna("").astype(str)
+    df["Amount"] = df["Amount"].round(2)
+    return df[cols]
+
+
+def _build_out_display(spending_tx):
+    """Prepare the Cash Out dataframe for the data editor."""
+    cols = ["_SheetRow", "Date", "Description", "Category", "Amount"]
+    if spending_tx.empty:
+        return pd.DataFrame(
+            {
+                "_SheetRow": pd.Series([], dtype="Int64"),
+                "Date": pd.Series([], dtype="str"),
+                "Description": pd.Series([], dtype="str"),
+                "Category": pd.Series([], dtype="str"),
+                "Amount": pd.Series([], dtype="float"),
+            }
+        )
+    df = spending_tx.copy().reset_index(drop=True)
+    df["Date"] = df["Date"].dt.strftime("%m/%d/%Y")
+    df["Description"] = df.get("Description", "").fillna("").astype(str)
+    df["Amount"] = df["Amount"].round(2)
+
+    # Normalise categories into our 3-bucket system
+    def _normalise(cat):
+        return cat if cat in (_CAT_DEPOSIT_DEBIT, _CAT_ADD_VAULT) else _CAT_SPENDING
+
+    df["Category"] = df["Category"].apply(_normalise)
+    return df[cols]
+
+
+def _cash_in_editor(income_tx, month_key, today):
+    orig = _build_in_display(income_tx)
+
+    edited = st.data_editor(
+        orig,
+        key=f"cash_in_editor_{month_key}",
+        num_rows="dynamic",
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "_SheetRow": None,
+            "Date": st.column_config.TextColumn(
+                "Date (MM/DD/YYYY)", default=today.strftime("%m/%d/%Y")
+            ),
+            "Description": st.column_config.TextColumn("Description", default=""),
+            "Amount": st.column_config.NumberColumn(
+                "Amount ($)", min_value=0.0, format="$%.2f", default=0.0
+            ),
+        },
+    )
+
+    if st.button("💾 Save Income Changes", key=f"save_in_{month_key}"):
+        _sync_in_changes(orig, edited, month_key)
+
+
+def _sync_in_changes(orig, edited, month_key):
+    orig_len = len(orig)
+    saved = 0
+
+    with st.spinner("Saving…"):
+        for idx in range(len(edited)):
+            row = edited.iloc[idx]
+            amt = row.get("Amount", 0)
+            date_val = str(row.get("Date", "")).strip()
+            if pd.isna(amt) or amt == 0 or date_val in ("", "nan", "NaT", "None"):
+                continue
+            if idx < orig_len:
+                old = orig.iloc[idx]
+                if (
+                    old["Date"] != row["Date"]
+                    or str(old["Description"]) != str(row["Description"])
+                    or old["Amount"] != row["Amount"]
+                ):
+                    update_cash_in_row(
+                        int(old["_SheetRow"]),
+                        row["Date"],
+                        month_key,
+                        str(row["Description"]),
+                        float(row["Amount"]),
+                    )
+                    saved += 1
+            else:
+                append_cash_in(
+                    row["Date"],
+                    month_key,
+                    str(row["Description"]),
+                    float(row["Amount"]),
+                )
+                saved += 1
+
+    if saved:
+        st.success(f"Saved {saved} change(s)!")
+        st.rerun()
+    else:
+        st.info("No changes detected.")
+
+
+def _cash_out_editor(spending_tx, month_key, today, bank_accounts):
+    orig = _build_out_display(spending_tx)
+
+    edited = st.data_editor(
+        orig,
+        key=f"cash_out_editor_{month_key}",
+        num_rows="dynamic",
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "_SheetRow": None,  # hidden
+            "Date": st.column_config.TextColumn(
+                "Date (MM/DD/YYYY)", default=today.strftime("%m/%d/%Y")
+            ),
+            "Description": st.column_config.TextColumn("Description", default=""),
+            "Category": st.column_config.SelectboxColumn(
+                "Category",
+                options=_OUT_CATEGORIES,
+                default=_CAT_SPENDING,
+                required=True,
+            ),
+            "Amount": st.column_config.NumberColumn(
+                "Amount ($)", min_value=0.0, format="$%.2f", default=0.0
+            ),
+        },
+    )
+
+    if st.button("💾 Save Spending Changes", key=f"save_out_{month_key}"):
+        _sync_out_changes(orig, edited, month_key, bank_accounts)
+
+
+def _sync_out_changes(orig, edited, month_key, bank_accounts):
+    debit_account = bank_accounts[0] if bank_accounts else None
+    orig_len = len(orig)
+    saved = 0
+
+    with st.spinner("Saving…"):
+        for idx in range(len(edited)):
+            row = edited.iloc[idx]
+            amt = row.get("Amount", 0)
+            date_val = str(row.get("Date", "")).strip()
+            if pd.isna(amt) or amt == 0 or date_val in ("", "nan", "NaT", "None"):
+                continue
+            cat = row.get("Category") or _CAT_SPENDING
+            if idx < orig_len:
+                old = orig.iloc[idx]
+                if (
+                    old["Date"] != row["Date"]
+                    or str(old["Description"]) != str(row["Description"])
+                    or old["Category"] != cat
+                    or old["Amount"] != row["Amount"]
+                ):
+                    update_cash_out_row(
+                        int(old["_SheetRow"]),
+                        row["Date"],
+                        month_key,
+                        str(row["Description"]),
+                        cat,
+                        float(row["Amount"]),
+                    )
+                    saved += 1
+            else:
+                append_cash_out(
+                    row["Date"],
+                    month_key,
+                    str(row["Description"]),
+                    cat,
+                    float(row["Amount"]),
+                )
+                if cat == _CAT_DEPOSIT_DEBIT and debit_account:
+                    # Log as an incoming transfer into Debit Instead
+                    desc = (
+                        f"From cash: {row['Description']}"
+                        if str(row["Description"])
+                        else "From cash"
+                    )
+                    append_debit_in(
+                        row["Date"],
+                        month_key,
+                        desc,
+                        float(row["Amount"]),
+                    )
+                saved += 1
+
+    if saved:
+        st.success(f"Saved {saved} change(s)!")
+        st.rerun()
+    else:
+        st.info("No changes detected.")

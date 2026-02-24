@@ -17,6 +17,8 @@ TAB_TRANSACTIONS = "Transactions"
 TAB_STARTING_BALANCES = "Monthly Starting Balances"
 TAB_CASH_IN = "Cash In"
 TAB_CASH_OUT = "Cash Out"
+TAB_DEBIT_IN = "Debit In"
+TAB_DEBIT_OUT = "Debit Out"
 
 # Resolve the service account JSON from the .secret/ folder next to this project
 _SECRET_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".secret")
@@ -65,9 +67,9 @@ def _get_or_create_worksheet(tab_name: str) -> gspread.Worksheet:
             )
         elif tab_name == TAB_STARTING_BALANCES:
             ws.append_row(["Month", "Account", "Starting Balance"])
-        elif tab_name == TAB_CASH_IN:
+        elif tab_name in (TAB_CASH_IN, TAB_DEBIT_IN):
             ws.append_row(["Date", "Month", "Description", "Amount"])
-        elif tab_name == TAB_CASH_OUT:
+        elif tab_name in (TAB_CASH_OUT, TAB_DEBIT_OUT):
             ws.append_row(["Date", "Month", "Description", "Category", "Amount"])
     return ws
 
@@ -350,6 +352,75 @@ def update_cash_out_row(
 ):
     """Update a specific row in the Cash Out tab by its sheet row number."""
     ws = _get_or_create_worksheet(TAB_CASH_OUT)
+    ws.update(
+        values=[[date, month, description, category, amount]],
+        range_name=f"A{sheet_row}:E{sheet_row}",
+        value_input_option="USER_ENTERED",
+    )
+    read_sheet.clear()
+
+
+# ── Debit In / Debit Out tab helpers ──────────────────────────────────────────
+
+
+def read_debit_in() -> pd.DataFrame:
+    df = read_sheet(TAB_DEBIT_IN)
+    if df.empty:
+        return df
+    df["Date"] = pd.to_datetime(df["Date"], format="%m/%d/%Y", errors="coerce")
+    df["Month"] = pd.to_datetime(df["Month"], errors="coerce")
+    df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce").fillna(0)
+    return df.dropna(subset=["Date"])
+
+
+def read_debit_out() -> pd.DataFrame:
+    df = read_sheet(TAB_DEBIT_OUT)
+    if df.empty:
+        return df
+    df["Date"] = pd.to_datetime(df["Date"], format="%m/%d/%Y", errors="coerce")
+    df["Month"] = pd.to_datetime(df["Month"], errors="coerce")
+    df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce").fillna(0)
+    return df.dropna(subset=["Date"])
+
+
+def append_debit_in(date: str, month: str, description: str, amount: float):
+    ws = _get_or_create_worksheet(TAB_DEBIT_IN)
+    ws.append_row([date, month, description, amount], value_input_option="USER_ENTERED")
+    read_sheet.clear()
+
+
+def append_debit_out(
+    date: str, month: str, description: str, category: str, amount: float
+):
+    ws = _get_or_create_worksheet(TAB_DEBIT_OUT)
+    ws.append_row(
+        [date, month, description, category, amount],
+        value_input_option="USER_ENTERED",
+    )
+    read_sheet.clear()
+
+
+def update_debit_in_row(
+    sheet_row: int, date: str, month: str, description: str, amount: float
+):
+    ws = _get_or_create_worksheet(TAB_DEBIT_IN)
+    ws.update(
+        values=[[date, month, description, amount]],
+        range_name=f"A{sheet_row}:D{sheet_row}",
+        value_input_option="USER_ENTERED",
+    )
+    read_sheet.clear()
+
+
+def update_debit_out_row(
+    sheet_row: int,
+    date: str,
+    month: str,
+    description: str,
+    category: str,
+    amount: float,
+):
+    ws = _get_or_create_worksheet(TAB_DEBIT_OUT)
     ws.update(
         values=[[date, month, description, category, amount]],
         range_name=f"A{sheet_row}:E{sheet_row}",
