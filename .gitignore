@@ -1,0 +1,7 @@
+.python-version
+__pycache__/
+*.pyc
+*.egg-info
+.venv/
+.streamlit/secrets.toml
+.secret/
