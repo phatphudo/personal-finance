@@ -152,7 +152,7 @@ def _build_display(tx):
     df = tx.copy().reset_index(drop=True)
     df["Date"] = df["Date"].dt.strftime("%m/%d")
     df["Description"] = df.get("Description", "").fillna("").astype(str)
-    df["Amount"] = df["Amount"].round(2)
+    df["Amount"] = df["Amount"].astype(float).round(2)
     return df[cols]
 
 

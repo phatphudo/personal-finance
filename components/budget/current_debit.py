@@ -225,7 +225,7 @@ def _build_debit_in_display(df_tx):
     df = df_tx.copy().reset_index(drop=True)
     df["Date"] = df["Date"].dt.strftime("%m/%d")
     df["Description"] = df.get("Description", "").fillna("").astype(str)
-    df["Amount"] = df["Amount"].round(2)
+    df["Amount"] = df["Amount"].astype(float).round(2)
     return df[cols]
 
 
@@ -244,7 +244,7 @@ def _build_debit_out_display(df_tx):
     df = df_tx.copy().reset_index(drop=True)
     df["Date"] = df["Date"].dt.strftime("%m/%d")
     df["Description"] = df.get("Description", "").fillna("").astype(str)
-    df["Amount"] = df["Amount"].round(2)
+    df["Amount"] = df["Amount"].astype(float).round(2)
 
     def _normalise(cat):
         return cat if cat in _DEBIT_OUT_CATEGORIES else _CAT_SPENDING

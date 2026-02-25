@@ -249,7 +249,7 @@ def _build_in_display(income_tx):
     df = income_tx.copy().reset_index(drop=True)
     df["Date"] = df["Date"].dt.strftime("%m/%d")
     df["Description"] = df.get("Description", "").fillna("").astype(str)
-    df["Amount"] = df["Amount"].round(2)
+    df["Amount"] = df["Amount"].astype(float).round(2)
     return df[cols]
 
 
@@ -269,7 +269,7 @@ def _build_out_display(spending_tx):
     df = spending_tx.copy().reset_index(drop=True)
     df["Date"] = df["Date"].dt.strftime("%m/%d")
     df["Description"] = df.get("Description", "").fillna("").astype(str)
-    df["Amount"] = df["Amount"].round(2)
+    df["Amount"] = df["Amount"].astype(float).round(2)
 
     # Normalise categories into our 3-bucket system
     def _normalise(cat):
