@@ -8,6 +8,7 @@ from utils.gsheets import (
     update_cash_in_row,
     update_cash_out_row,
     upsert_cash_count,
+    upsert_starting_balance,
 )
 
 _CAT_DEPOSIT_DEBIT = "Deposit to Debit"
@@ -23,6 +24,7 @@ def render_cash(
     ci_df,
     co_df,
     cc_df,
+    sb_df,
     sel_year,
     sel_mon,
     month_key,
@@ -80,19 +82,15 @@ def render_cash(
     total_vault = vault_tx["Amount"].sum() if not vault_tx.empty else 0.0
 
     # ── Remaining from previous month ──────────────────────────────────────
-    if sel_mon == 1:
-        prev_year, prev_mon = sel_year - 1, 12
-    else:
-        prev_year, prev_mon = sel_year, sel_mon - 1
-
     prev_actual = 0.0
-    if not cc_df.empty:
-        prev_counts = cc_df[
-            (cc_df["Month"].dt.year == prev_year)
-            & (cc_df["Month"].dt.month == prev_mon)
-            & (cc_df["Source"].isin(active_sources))
+    if not sb_df.empty:
+        match = sb_df[
+            (sb_df["Month"].dt.year == sel_year)
+            & (sb_df["Month"].dt.month == sel_mon)
+            & (sb_df["Account"] == "Cash")
         ]
-        prev_actual = prev_counts["Amount"].sum()
+        if not match.empty:
+            prev_actual = float(match.iloc[0]["Starting Balance"])
 
     override_key = f"cash_remaining_{month_key}"
     if override_key not in st.session_state:
@@ -169,25 +167,25 @@ def render_cash(
         )
 
     # ── Remaining override & physical counts ───────────────────────────────
-    with st.expander(
-        "⚙️ Settings: Remaining from Previous Month & Cash Counts", expanded=False
-    ):
+    with st.expander("⚙️ Settings: Starting Balance & Cash Counts", expanded=False):
         st.caption(
-            f"**Remaining from previous month** defaults to ${prev_actual:,.2f} "
-            "(previous month's Actual Balance of active sources)."
+            f"**Starting Balance for this month** defaults to stored value of ${prev_actual:,.2f}."
         )
         c1, c2 = st.columns([2, 1])
         new_remaining = c1.number_input(
-            "Override Remaining ($)",
+            "Override Starting Balance ($)",
             value=float(remaining),
             step=0.01,
             format="%.2f",
             key=f"remaining_input_{month_key}",
         )
         if c2.button(
-            "Apply", key=f"apply_remaining_{month_key}", use_container_width=True
+            "Save", key=f"apply_remaining_{month_key}", use_container_width=True
         ):
             st.session_state[override_key] = new_remaining
+            with st.spinner("Saving..."):
+                upsert_starting_balance(month_key, "Cash", new_remaining)
+            st.success("Starting balance saved!")
             st.rerun()
 
         st.markdown("**Manual Cash Count by Bucket**")

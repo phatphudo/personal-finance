@@ -7,6 +7,7 @@ from utils.gsheets import (
     update_debit_in_row,
     update_debit_out_row,
     upsert_cash_count,
+    upsert_starting_balance,
 )
 
 _CAT_SPENDING = "Spending"
@@ -21,6 +22,7 @@ def render_debit(
     di_df,
     do_df,
     cc_df,
+    sb_df,
     sel_year,
     sel_mon,
     month_key,
@@ -79,20 +81,15 @@ def render_debit(
     total_out = total_spending + total_cc_payment
 
     # ── Remaining from previous month ──────────────────────────────────────
-    if sel_mon == 1:
-        prev_year, prev_mon = sel_year - 1, 12
-    else:
-        prev_year, prev_mon = sel_year, sel_mon - 1
-
     prev_actual = 0.0
-    if not cc_df.empty:
-        prev_counts = cc_df[
-            (cc_df["Month"].dt.year == prev_year)
-            & (cc_df["Month"].dt.month == prev_mon)
-            & (cc_df["Source"] == debit_account)
+    if not sb_df.empty:
+        match = sb_df[
+            (sb_df["Month"].dt.year == sel_year)
+            & (sb_df["Month"].dt.month == sel_mon)
+            & (sb_df["Account"] == "Debit")
         ]
-        if not prev_counts.empty:
-            prev_actual = prev_counts["Amount"].sum()
+        if not match.empty:
+            prev_actual = float(match.iloc[0]["Starting Balance"])
 
     override_key = f"debit_remaining_{month_key}"
     if override_key not in st.session_state:
@@ -159,7 +156,9 @@ def render_debit(
 
     # ── Settings & Balances ───────────────────────────────────────────────
     with st.expander("⚙️ Settings: Start Balance & End Count", expanded=False):
-        st.caption(f"**Previous Month End Balance** defaults to ${prev_actual:,.2f}.")
+        st.caption(
+            f"**Starting Balance for this month** defaults to stored value of ${prev_actual:,.2f}."
+        )
         c1, c2 = st.columns([2, 1])
         new_remaining = c1.number_input(
             "Override Starting Balance ($)",
@@ -169,9 +168,12 @@ def render_debit(
             key=f"debit_remaining_input_{month_key}",
         )
         if c2.button(
-            "Apply", key=f"apply_debit_remaining_{month_key}", use_container_width=True
+            "Save", key=f"apply_debit_remaining_{month_key}", use_container_width=True
         ):
             st.session_state[override_key] = new_remaining
+            with st.spinner("Saving..."):
+                upsert_starting_balance(month_key, "Debit", new_remaining)
+            st.success("Starting balance saved!")
             st.rerun()
 
         st.markdown("**Manual Debit Account End-of-Month Balance**")

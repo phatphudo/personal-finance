@@ -13,6 +13,7 @@ from utils.gsheets import (
     read_debit_in,
     read_debit_out,
     read_settings,
+    read_starting_balances,
 )
 from utils.helpers import month_label
 
@@ -28,6 +29,7 @@ def render():
         di_df = read_debit_in()
         do_df = read_debit_out()
         cred_df = read_credit_tx()
+        sb_df = read_starting_balances()
     except Exception as e:
         st.error(f"Could not load data: {e}")
         return
@@ -82,6 +84,7 @@ def render():
             ci_df,
             co_df,
             cc_df,
+            sb_df,
             sel_year,
             sel_mon,
             month_key,
@@ -97,6 +100,7 @@ def render():
             di_df,
             do_df,
             cc_df,
+            sb_df,
             sel_year,
             sel_mon,
             month_key,
