@@ -1,16 +1,11 @@
 import pandas as pd
 
-from utils.gsheets import (
-    TAB_SETTINGS,
-    get_or_create_worksheet,
-    invalidate_cache,
-    read_sheet,
-)
+import utils.gsheets as core
 
 
 def read_settings() -> dict:
     """Return a dict of lists from the Settings tab."""
-    df = read_sheet(TAB_SETTINGS)
+    df = core.read_sheet(core.TAB_SETTINGS)
     settings = {}
     for col in df.columns:
         settings[col] = df[col].dropna().replace("", pd.NA).dropna().tolist()
@@ -22,7 +17,7 @@ def write_settings(settings: dict):
     Overwrite the entire Settings tab with the given dict.
     Keys become column headers; values are lists of items for that column.
     """
-    ws = get_or_create_worksheet(TAB_SETTINGS)
+    ws = core.get_or_create_worksheet(core.TAB_SETTINGS)
     ws.clear()
 
     columns = list(settings.keys())
@@ -39,4 +34,4 @@ def write_settings(settings: dict):
         rows.append(row)
 
     ws.update(rows, value_input_option="USER_ENTERED")
-    invalidate_cache()
+    core.invalidate_cache()

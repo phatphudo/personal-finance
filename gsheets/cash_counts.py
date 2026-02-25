@@ -1,15 +1,10 @@
 import pandas as pd
 
-from utils.gsheets import (
-    TAB_CASH_COUNTS,
-    get_or_create_worksheet,
-    invalidate_cache,
-    read_sheet,
-)
+import utils.gsheets as core
 
 
 def read_cash_counts() -> pd.DataFrame:
-    df = read_sheet(TAB_CASH_COUNTS)
+    df = core.read_sheet(core.TAB_CASH_COUNTS)
     if df.empty:
         return df
     df["Month"] = pd.to_datetime(df["Month"], errors="coerce")
@@ -18,7 +13,7 @@ def read_cash_counts() -> pd.DataFrame:
 
 
 def upsert_cash_count(month: str, source: str, amount: float):
-    ws = get_or_create_worksheet(TAB_CASH_COUNTS)
+    ws = core.get_or_create_worksheet(core.TAB_CASH_COUNTS)
     all_vals = ws.get_all_values()
     if not all_vals:
         ws.append_row(["Month", "Source", "Amount"])
@@ -26,7 +21,7 @@ def upsert_cash_count(month: str, source: str, amount: float):
     for i, row in enumerate(all_vals[1:], start=2):
         if len(row) >= 2 and row[0] == month and row[1] == source:
             ws.update_cell(i, 3, amount)
-            invalidate_cache()
+            core.invalidate_cache()
             return
     ws.append_row([month, source, amount], value_input_option="USER_ENTERED")
-    invalidate_cache()
+    core.invalidate_cache()

@@ -1,15 +1,10 @@
 import pandas as pd
 
-from utils.gsheets import (
-    TAB_WORK_HOURS,
-    get_or_create_worksheet,
-    invalidate_cache,
-    read_sheet,
-)
+import utils.gsheets as core
 
 
 def read_work_hours() -> pd.DataFrame:
-    df = read_sheet(TAB_WORK_HOURS)
+    df = core.read_sheet(core.TAB_WORK_HOURS)
     if df.empty:
         return df
 
@@ -34,20 +29,20 @@ def read_work_hours() -> pd.DataFrame:
 
 
 def append_work_hours(date: str, clock_in: str, clock_out: str, status: str = "Actual"):
-    ws = get_or_create_worksheet(TAB_WORK_HOURS)
+    ws = core.get_or_create_worksheet(core.TAB_WORK_HOURS)
     ws.append_row(
         [date, clock_in, clock_out, status], value_input_option="USER_ENTERED"
     )
-    invalidate_cache()
+    core.invalidate_cache()
 
 
 def update_work_hours_row(
     sheet_row: int, date: str, clock_in: str, clock_out: str, status: str
 ):
-    ws = get_or_create_worksheet(TAB_WORK_HOURS)
+    ws = core.get_or_create_worksheet(core.TAB_WORK_HOURS)
     ws.update(
         values=[[date, clock_in, clock_out, status]],
         range_name=f"A{sheet_row}:D{sheet_row}",
         value_input_option="USER_ENTERED",
     )
-    invalidate_cache()
+    core.invalidate_cache()
