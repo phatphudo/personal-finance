@@ -5,6 +5,7 @@ import streamlit as st
 from components.budget.current_cash import render_cash
 from components.budget.current_credit import render_credit
 from components.budget.current_debit import render_debit
+from components.budget.current_overview import render_overview
 from utils.gsheets import (
     read_cash_counts,
     read_cash_in,
@@ -73,6 +74,19 @@ def render():
     sel_year, sel_mon = sel_month.year, sel_month.month
     month_key = sel_month.strftime("%Y-%m-01")
 
+    render_overview(
+        ci_df,
+        co_df,
+        di_df,
+        do_df,
+        cred_df,
+        cc_df,
+        sel_year,
+        sel_mon,
+        cash_sources,
+        bank_accounts,
+    )
+
     st.markdown("---")
 
     # ── Tabs ────────────────────────────────────────────────────────────────
@@ -95,6 +109,7 @@ def render():
             active_sources,
             bank_accounts,
             income_cats,
+            expense_cats,
         )
 
     with tab_debit:
@@ -109,6 +124,7 @@ def render():
             today,
             bank_accounts,
             income_cats,
+            expense_cats,
         )
 
     with tab_credit:

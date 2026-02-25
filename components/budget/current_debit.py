@@ -10,9 +10,7 @@ from utils.gsheets import (
     upsert_starting_balance,
 )
 
-_CAT_SPENDING = "Spending"
 _CAT_CC_PAYMENT = "Credit Card Payment"
-_DEBIT_OUT_CATEGORIES = [_CAT_SPENDING, _CAT_CC_PAYMENT]
 
 
 # ── Debit section ─────────────────────────────────────────────────────────────
@@ -29,6 +27,7 @@ def render_debit(
     today,
     bank_accounts,
     income_cats,
+    expense_cats,
 ):
     if not bank_accounts:
         st.info("No Debit Accounts configured. Add them in ⚙️ Settings.")
@@ -222,7 +221,7 @@ def render_debit(
 
     with col_out:
         st.markdown("##### ⬆️ Debit Out (Spending)")
-        _debit_out_editor(spending_tx, month_key, today)
+        _debit_out_editor(spending_tx, month_key, today, expense_cats)
 
 
 def _build_debit_in_display(df_tx):
@@ -245,7 +244,7 @@ def _build_debit_in_display(df_tx):
     return df[cols]
 
 
-def _build_debit_out_display(df_tx):
+def _build_debit_out_display(df_tx, expense_cats):
     cols = ["_SheetRow", "Date", "Description", "Category", "Amount"]
     if df_tx.empty:
         return pd.DataFrame(
@@ -262,8 +261,14 @@ def _build_debit_out_display(df_tx):
     df["Description"] = df.get("Description", "").fillna("").astype(str)
     df["Amount"] = df["Amount"].astype(float).round(2)
 
+    if not expense_cats:
+        expense_cats = ["Other"]
+
+    valid_cats = expense_cats + [_CAT_CC_PAYMENT]
+    default_cat = expense_cats[0]
+
     def _normalise(cat):
-        return cat if cat in _DEBIT_OUT_CATEGORIES else _CAT_SPENDING
+        return cat if cat in valid_cats else default_cat
 
     df["Category"] = df["Category"].apply(_normalise)
     return df[cols]
@@ -350,8 +355,14 @@ def _sync_debit_in_changes(orig, edited, month_key):
         st.info("No changes detected.")
 
 
-def _debit_out_editor(df_tx, month_key, today):
-    orig = _build_debit_out_display(df_tx)
+def _debit_out_editor(df_tx, month_key, today, expense_cats):
+    if not expense_cats:
+        expense_cats = ["Other"]
+
+    orig = _build_debit_out_display(df_tx, expense_cats)
+
+    options = expense_cats + [_CAT_CC_PAYMENT]
+
     edited = st.data_editor(
         orig,
         key=f"debit_out_editor_{month_key}",
@@ -366,8 +377,8 @@ def _debit_out_editor(df_tx, month_key, today):
             "Description": st.column_config.TextColumn("Description", default=""),
             "Category": st.column_config.SelectboxColumn(
                 "Category",
-                options=_DEBIT_OUT_CATEGORIES,
-                default=_CAT_SPENDING,
+                options=options,
+                default=expense_cats[0],
                 required=True,
             ),
             "Amount": st.column_config.NumberColumn(
@@ -376,10 +387,10 @@ def _debit_out_editor(df_tx, month_key, today):
         },
     )
     if st.button("💾 Save Debit Spending", key=f"save_debit_out_{month_key}"):
-        _sync_debit_out_changes(orig, edited, month_key)
+        _sync_debit_out_changes(orig, edited, month_key, expense_cats)
 
 
-def _sync_debit_out_changes(orig, edited, month_key):
+def _sync_debit_out_changes(orig, edited, month_key, expense_cats):
     orig_len = len(orig)
     saved = 0
     with st.spinner("Saving…"):
@@ -389,7 +400,7 @@ def _sync_debit_out_changes(orig, edited, month_key):
             date_val = str(row.get("Date", "")).strip()
             if pd.isna(amt) or amt == 0 or date_val in ("", "nan", "NaT", "None"):
                 continue
-            cat = row.get("Category") or _CAT_SPENDING
+            cat = row.get("Category") or (expense_cats[0] if expense_cats else "Other")
             if idx < orig_len:
                 old = orig.iloc[idx]
                 if (

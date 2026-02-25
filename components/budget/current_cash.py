@@ -13,8 +13,6 @@ from utils.gsheets import (
 
 _CAT_DEPOSIT_DEBIT = "Deposit to Debit"
 _CAT_ADD_VAULT = "Add to Vault"
-_CAT_SPENDING = "Spending"
-_OUT_CATEGORIES = [_CAT_SPENDING, _CAT_DEPOSIT_DEBIT, _CAT_ADD_VAULT]
 
 
 # ── Cash section ──────────────────────────────────────────────────────────────
@@ -34,6 +32,7 @@ def render_cash(
     active_sources,
     bank_accounts,
     income_cats,
+    expense_cats,
 ):
     if not cash_sources:
         st.info("No Cash Sources configured. Add them in ⚙️ Settings.")
@@ -243,7 +242,7 @@ def render_cash(
 
     with col_out:
         st.markdown("##### ⬇️ Cash Out (Spending)")
-        _cash_out_editor(spending_tx, month_key, today, bank_accounts)
+        _cash_out_editor(spending_tx, month_key, today, bank_accounts, expense_cats)
 
 
 def _build_in_display(income_tx):
@@ -267,7 +266,7 @@ def _build_in_display(income_tx):
     return df[cols]
 
 
-def _build_out_display(spending_tx):
+def _build_out_display(spending_tx, expense_cats):
     """Prepare the Cash Out dataframe for the data editor."""
     cols = ["_SheetRow", "Date", "Description", "Category", "Amount"]
     if spending_tx.empty:
@@ -285,9 +284,15 @@ def _build_out_display(spending_tx):
     df["Description"] = df.get("Description", "").fillna("").astype(str)
     df["Amount"] = df["Amount"].astype(float).round(2)
 
-    # Normalise categories into our 3-bucket system
+    if not expense_cats:
+        expense_cats = ["Other"]
+
+    valid_cats = expense_cats + [_CAT_DEPOSIT_DEBIT, _CAT_ADD_VAULT]
+    default_cat = expense_cats[0]
+
+    # Normalise categories into our system
     def _normalise(cat):
-        return cat if cat in (_CAT_DEPOSIT_DEBIT, _CAT_ADD_VAULT) else _CAT_SPENDING
+        return cat if cat in valid_cats else default_cat
 
     df["Category"] = df["Category"].apply(_normalise)
     return df[cols]
@@ -376,8 +381,13 @@ def _sync_in_changes(orig, edited, month_key):
         st.info("No changes detected.")
 
 
-def _cash_out_editor(spending_tx, month_key, today, bank_accounts):
-    orig = _build_out_display(spending_tx)
+def _cash_out_editor(spending_tx, month_key, today, bank_accounts, expense_cats):
+    if not expense_cats:
+        expense_cats = ["Other"]
+
+    orig = _build_out_display(spending_tx, expense_cats)
+
+    options = expense_cats + [_CAT_DEPOSIT_DEBIT, _CAT_ADD_VAULT]
 
     edited = st.data_editor(
         orig,
@@ -393,8 +403,8 @@ def _cash_out_editor(spending_tx, month_key, today, bank_accounts):
             "Description": st.column_config.TextColumn("Description", default=""),
             "Category": st.column_config.SelectboxColumn(
                 "Category",
-                options=_OUT_CATEGORIES,
-                default=_CAT_SPENDING,
+                options=options,
+                default=expense_cats[0],
                 required=True,
             ),
             "Amount": st.column_config.NumberColumn(
@@ -404,10 +414,10 @@ def _cash_out_editor(spending_tx, month_key, today, bank_accounts):
     )
 
     if st.button("💾 Save Spending Changes", key=f"save_out_{month_key}"):
-        _sync_out_changes(orig, edited, month_key, bank_accounts)
+        _sync_out_changes(orig, edited, month_key, bank_accounts, expense_cats)
 
 
-def _sync_out_changes(orig, edited, month_key, bank_accounts):
+def _sync_out_changes(orig, edited, month_key, bank_accounts, expense_cats):
     debit_account = bank_accounts[0] if bank_accounts else None
     orig_len = len(orig)
     saved = 0
@@ -419,7 +429,7 @@ def _sync_out_changes(orig, edited, month_key, bank_accounts):
             date_val = str(row.get("Date", "")).strip()
             if pd.isna(amt) or amt == 0 or date_val in ("", "nan", "NaT", "None"):
                 continue
-            cat = row.get("Category") or _CAT_SPENDING
+            cat = row.get("Category") or (expense_cats[0] if expense_cats else "Other")
             if idx < orig_len:
                 old = orig.iloc[idx]
                 if (

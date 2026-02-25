@@ -111,29 +111,6 @@ def _render_card(cred_df, card_name, sel_year, sel_mon, month_key, today, expens
         _sync_changes(orig, edited, month_key, card_name)
 
     # ── Spending breakdown chart ──────────────────────────────────────────────
-    if not tx.empty:
-        try:
-            import plotly.express as px
-
-            st.markdown("---")
-            st.markdown("##### 📊 Spending Breakdown")
-            cat_totals = tx.groupby("Category")["Amount"].sum().reset_index()
-            fig = px.pie(
-                cat_totals,
-                names="Category",
-                values="Amount",
-                hole=0.45,
-                color_discrete_sequence=px.colors.qualitative.Pastel,
-            )
-            fig.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)",
-                font_color="#e0e0e0",
-                height=320,
-                margin=dict(t=20, b=20),
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        except ImportError:
-            pass
 
 
 def _build_display(tx):
