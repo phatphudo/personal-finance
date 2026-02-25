@@ -155,51 +155,62 @@ def render_debit(
         )
 
     # ── Settings & Balances ───────────────────────────────────────────────
-    with st.expander("⚙️ Settings: Start Balance & End Count", expanded=False):
-        st.caption(
-            f"**Starting Balance for this month** defaults to stored value of ${prev_actual:,.2f}."
-        )
-        c1, c2 = st.columns([2, 1])
-        new_remaining = c1.number_input(
-            "Override Starting Balance ($)",
-            value=float(remaining),
-            step=0.01,
-            format="%.2f",
-            key=f"debit_remaining_input_{month_key}",
-        )
-        if c2.button(
-            "Save", key=f"apply_debit_remaining_{month_key}", use_container_width=True
-        ):
-            st.session_state[override_key] = new_remaining
-            with st.spinner("Saving..."):
-                upsert_starting_balance(month_key, "Debit", new_remaining)
-            st.success("Starting balance saved!")
-            st.rerun()
+    with st.expander("⚙️ Settings: Balances & Counts", expanded=False):
+        col_sb, col_ec = st.columns(2, gap="large")
 
-        st.markdown("**Manual Debit Account End-of-Month Balance**")
-        cur_actual = 0.0
-        if not cc_df.empty:
-            match = cc_df[
-                (cc_df["Month"].dt.year == sel_year)
-                & (cc_df["Month"].dt.month == sel_mon)
-                & (cc_df["Source"] == debit_account)
-            ]
-            if not match.empty:
-                cur_actual = float(match.iloc[0]["Amount"])
+        with col_sb:
+            st.markdown("#### 🏁 Starting Balance")
+            st.caption(f"Defaults to stored value of ${prev_actual:,.2f}.")
+            new_remaining = st.number_input(
+                "Override Amount ($)",
+                value=float(remaining),
+                step=0.01,
+                format="%.2f",
+                key=f"debit_remaining_input_{month_key}",
+            )
+            if st.button(
+                "💾 Save Starting Balance",
+                key=f"apply_debit_remaining_{month_key}",
+                use_container_width=True,
+            ):
+                st.session_state[override_key] = new_remaining
+                with st.spinner("Saving..."):
+                    upsert_starting_balance(month_key, "Debit", new_remaining)
+                st.success("Starting balance saved!")
+                st.rerun()
 
-        new_count = st.number_input(
-            debit_account,
-            value=cur_actual,
-            min_value=0.0,
-            step=0.01,
-            format="%.2f",
-            key=f"debit_count_{month_key}_{debit_account}",
-        )
-        if st.button("💾 Save Actual Balance", key=f"save_debit_count_{month_key}"):
-            with st.spinner("Saving count…"):
-                upsert_cash_count(month_key, debit_account, new_count)
-            st.success("Balance saved!")
-            st.rerun()
+        with col_ec:
+            st.markdown("#### 🎯 End of Month Count")
+            st.caption("Actual balance from bank statement.")
+
+            cur_actual = 0.0
+            if not cc_df.empty:
+                match = cc_df[
+                    (cc_df["Month"].dt.year == sel_year)
+                    & (cc_df["Month"].dt.month == sel_mon)
+                    & (cc_df["Source"] == debit_account)
+                ]
+                if not match.empty:
+                    cur_actual = float(match.iloc[0]["Amount"])
+
+            new_count = st.number_input(
+                debit_account,
+                value=cur_actual,
+                min_value=0.0,
+                step=0.01,
+                format="%.2f",
+                key=f"debit_count_{month_key}_{debit_account}",
+            )
+
+            if st.button(
+                "💾 Save Actual Balance",
+                key=f"save_debit_count_{month_key}",
+                use_container_width=True,
+            ):
+                with st.spinner("Saving count…"):
+                    upsert_cash_count(month_key, debit_account, new_count)
+                st.success("Balance saved!")
+                st.rerun()
 
     st.markdown("---")
 

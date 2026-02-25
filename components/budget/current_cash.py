@@ -167,54 +167,67 @@ def render_cash(
         )
 
     # ── Remaining override & physical counts ───────────────────────────────
-    with st.expander("⚙️ Settings: Starting Balance & Cash Counts", expanded=False):
-        st.caption(
-            f"**Starting Balance for this month** defaults to stored value of ${prev_actual:,.2f}."
-        )
-        c1, c2 = st.columns([2, 1])
-        new_remaining = c1.number_input(
-            "Override Starting Balance ($)",
-            value=float(remaining),
-            step=0.01,
-            format="%.2f",
-            key=f"remaining_input_{month_key}",
-        )
-        if c2.button(
-            "Save", key=f"apply_remaining_{month_key}", use_container_width=True
-        ):
-            st.session_state[override_key] = new_remaining
-            with st.spinner("Saving..."):
-                upsert_starting_balance(month_key, "Cash", new_remaining)
-            st.success("Starting balance saved!")
-            st.rerun()
+    with st.expander("⚙️ Settings: Balances & Counts", expanded=False):
+        col_sb, col_ec = st.columns(2, gap="large")
 
-        st.markdown("**Manual Cash Count by Bucket**")
-        count_cols = st.columns(len(cash_sources))
-        new_counts = {}
-        for i, src in enumerate(cash_sources):
-            cur = 0.0
-            if not cc_df.empty:
-                match = cc_df[
-                    (cc_df["Month"].dt.year == sel_year)
-                    & (cc_df["Month"].dt.month == sel_mon)
-                    & (cc_df["Source"] == src)
-                ]
-                if not match.empty:
-                    cur = float(match.iloc[0]["Amount"])
-            new_counts[src] = count_cols[i].number_input(
-                src,
-                value=cur,
-                min_value=0.0,
+        with col_sb:
+            st.markdown("#### 🏁 Starting Balance")
+            st.caption(f"Defaults to stored value of ${prev_actual:,.2f}.")
+            new_remaining = st.number_input(
+                "Override Amount ($)",
+                value=float(remaining),
                 step=0.01,
                 format="%.2f",
-                key=f"cash_count_{month_key}_{src}",
+                key=f"remaining_input_{month_key}",
             )
-        if st.button("💾 Save Cash Counts", key=f"save_cash_counts_{month_key}"):
-            with st.spinner("Saving counts…"):
-                for src, amt in new_counts.items():
-                    upsert_cash_count(month_key, src, amt)
-            st.success("Cash counts saved!")
-            st.rerun()
+            if st.button(
+                "💾 Save Starting Balance",
+                key=f"apply_remaining_{month_key}",
+                use_container_width=True,
+            ):
+                st.session_state[override_key] = new_remaining
+                with st.spinner("Saving..."):
+                    upsert_starting_balance(month_key, "Cash", new_remaining)
+                st.success("Starting balance saved!")
+                st.rerun()
+
+        with col_ec:
+            st.markdown("#### 🎯 End of Month Counts")
+            st.caption("Physical tally of active sources.")
+
+            grid_cols = st.columns(2)
+            new_counts = {}
+            for i, src in enumerate(cash_sources):
+                cur = 0.0
+                if not cc_df.empty:
+                    match = cc_df[
+                        (cc_df["Month"].dt.year == sel_year)
+                        & (cc_df["Month"].dt.month == sel_mon)
+                        & (cc_df["Source"] == src)
+                    ]
+                    if not match.empty:
+                        cur = float(match.iloc[0]["Amount"])
+
+                target_col = grid_cols[i % 2]
+                new_counts[src] = target_col.number_input(
+                    src,
+                    value=cur,
+                    min_value=0.0,
+                    step=0.01,
+                    format="%.2f",
+                    key=f"cash_count_{month_key}_{src}",
+                )
+
+            if st.button(
+                "💾 Save Cash Counts",
+                key=f"save_cash_counts_{month_key}",
+                use_container_width=True,
+            ):
+                with st.spinner("Saving counts…"):
+                    for src, amt in new_counts.items():
+                        upsert_cash_count(month_key, src, amt)
+                st.success("Cash counts saved!")
+                st.rerun()
 
     st.markdown("---")
 
