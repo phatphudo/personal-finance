@@ -101,20 +101,63 @@ def render_overview(
         total_networth = cash_in_hand + debit_bal
 
     st.markdown("---")
-    st.markdown("### 📊 Monthly Overview (Actuals)")
+    st.markdown("### 📊 Monthly Overview")
 
     m1, m2, m3 = st.columns(3)
-    m1.metric("Total Income", f"${total_income:,.2f}")
-    m2.metric("Total Spending", f"${total_spending:,.2f}")
-    m3.metric("Total Networth", f"${total_networth:,.2f}")
+    m1.metric("Total Networth", f"${total_networth:,.2f}")
+    m2.metric("Total Income", f"${total_income:,.2f}")
+    m3.metric("Total Spending", f"${total_spending:,.2f}")
 
     try:
         import plotly.express as px
 
         # Swap tabs: Income first, then Spending
-        tab_inc, tab_spend, tab_nw = st.tabs(
-            ["📈 Income", "💸 Spending", "💰 Networth"]
+        tab_nw, tab_inc, tab_spend = st.tabs(
+            ["💰 Networth", "📈 Income", "💸 Spending"]
         )
+
+        with tab_nw:
+            if not networth_all.empty and "Source" in networth_all.columns:
+                c1, c2 = st.columns(2)
+                with c1:
+                    nw_grouped = networth_all.groupby(
+                        ["Source", "Type"], as_index=False
+                    )["Amount"].sum()
+                    fig_bar_nw = px.bar(
+                        nw_grouped,
+                        x="Source",
+                        y="Amount",
+                        color="Type",
+                        barmode="group",
+                        title="Networth by Account/Bucket",
+                        color_discrete_sequence=px.colors.qualitative.Pastel,
+                    )
+                    fig_bar_nw.update_layout(
+                        paper_bgcolor="rgba(0,0,0,0)",
+                        font_color="#e0e0e0",
+                        margin=dict(t=40, b=20),
+                    )
+                    st.plotly_chart(fig_bar_nw, use_container_width=True)
+                with c2:
+                    nw_total = networth_all.groupby("Source", as_index=False)[
+                        "Amount"
+                    ].sum()
+                    fig_pie_nw = px.pie(
+                        nw_total,
+                        names="Source",
+                        values="Amount",
+                        hole=0.45,
+                        title="Overall Networth Breakdown",
+                        color_discrete_sequence=px.colors.qualitative.Pastel,
+                    )
+                    fig_pie_nw.update_layout(
+                        paper_bgcolor="rgba(0,0,0,0)",
+                        font_color="#e0e0e0",
+                        margin=dict(t=40, b=20),
+                    )
+                    st.plotly_chart(fig_pie_nw, use_container_width=True)
+            else:
+                st.info("No networth data for this month.")
 
         with tab_inc:
             if not income_all.empty and "Category" in income_all.columns:
@@ -201,49 +244,6 @@ def render_overview(
                     st.plotly_chart(fig_pie, use_container_width=True)
             else:
                 st.info("No spending data for this month.")
-
-        with tab_nw:
-            if not networth_all.empty and "Source" in networth_all.columns:
-                c1, c2 = st.columns(2)
-                with c1:
-                    nw_grouped = networth_all.groupby(
-                        ["Source", "Type"], as_index=False
-                    )["Amount"].sum()
-                    fig_bar_nw = px.bar(
-                        nw_grouped,
-                        x="Source",
-                        y="Amount",
-                        color="Type",
-                        barmode="group",
-                        title="Networth by Account/Bucket",
-                        color_discrete_sequence=px.colors.qualitative.Pastel,
-                    )
-                    fig_bar_nw.update_layout(
-                        paper_bgcolor="rgba(0,0,0,0)",
-                        font_color="#e0e0e0",
-                        margin=dict(t=40, b=20),
-                    )
-                    st.plotly_chart(fig_bar_nw, use_container_width=True)
-                with c2:
-                    nw_total = networth_all.groupby("Source", as_index=False)[
-                        "Amount"
-                    ].sum()
-                    fig_pie_nw = px.pie(
-                        nw_total,
-                        names="Source",
-                        values="Amount",
-                        hole=0.45,
-                        title="Overall Networth Breakdown",
-                        color_discrete_sequence=px.colors.qualitative.Pastel,
-                    )
-                    fig_pie_nw.update_layout(
-                        paper_bgcolor="rgba(0,0,0,0)",
-                        font_color="#e0e0e0",
-                        margin=dict(t=40, b=20),
-                    )
-                    st.plotly_chart(fig_pie_nw, use_container_width=True)
-            else:
-                st.info("No networth data for this month.")
 
     except ImportError:
         pass
