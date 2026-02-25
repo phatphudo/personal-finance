@@ -1,78 +1,123 @@
-import datetime
-
 import pandas as pd
 import streamlit as st
 
-from utils.gsheets import (
-    append_transaction,
-    upsert_starting_balance,
-)
-from utils.helpers import compute_monthly_balance
+from utils.gsheets import append_credit_tx, update_credit_tx_row
 
-# ── Generic account section (Credit / Legacy) ────────────────────────────────
+# ── Credit Card section ───────────────────────────────────────────────────────
 
 
-def render_accounts(
-    section_title,
-    accounts,
-    tx_df,
-    sb_df,
+def render_credit(
+    cred_df,
     sel_year,
     sel_mon,
+    month_key,
     today,
+    credit_cards,
     expense_cats,
-    income_cats,
 ):
-    if not accounts:
-        st.info(f"No {section_title}s configured. Add them in ⚙️ Settings.")
+    if not credit_cards:
+        st.info("No Credit Cards configured. Add them in ⚙️ Settings.")
         return
 
-    def _balance_row(acct):
-        if tx_df.empty:
-            return {"Account": acct, "Start": 0.0, "In": 0.0, "Out": 0.0, "End": 0.0}
-        b = compute_monthly_balance(tx_df, sb_df, acct, sel_year, sel_mon)
-        return {
-            "Account": acct,
-            "Start": b["starting"],
-            "In": b["income"],
-            "Out": b["expenses"],
-            "End": b["ending"],
-        }
+    # One sub-tab per card (future-proof for multiple cards)
+    if len(credit_cards) == 1:
+        _render_card(
+            cred_df,
+            credit_cards[0],
+            sel_year,
+            sel_mon,
+            month_key,
+            today,
+            expense_cats,
+        )
+    else:
+        card_tabs = st.tabs([f"💳 {c}" for c in credit_cards])
+        for tab, card in zip(card_tabs, credit_cards):
+            with tab:
+                _render_card(
+                    cred_df,
+                    card,
+                    sel_year,
+                    sel_mon,
+                    month_key,
+                    today,
+                    expense_cats,
+                )
 
-    rows = [_balance_row(a) for a in accounts]
-    sdf = pd.DataFrame(rows)
-    totals = pd.DataFrame(
-        [
-            {
-                "Account": "**Total**",
-                "Start": sdf["Start"].sum(),
-                "In": sdf["In"].sum(),
-                "Out": sdf["Out"].sum(),
-                "End": sdf["End"].sum(),
-            }
-        ]
-    )
-    combined = pd.concat([sdf, totals], ignore_index=True)
-    styled = combined.style.format(
-        {col: "${:,.2f}".format for col in ["Start", "In", "Out", "End"]}
-    )
-    st.dataframe(styled, width="stretch", hide_index=True)
+
+def _render_card(cred_df, card_name, sel_year, sel_mon, month_key, today, expense_cats):
+    # ── Filter to this card's transactions for the selected month ────────────
+    def _filter(df):
+        if df.empty:
+            return pd.DataFrame()
+        card_match = df[
+            "Category"
+        ].notna()  # all rows (card is stored in description context)
+        # Filter by Month billing-period tag; fallback to Date
+        if "Month" in df.columns and not df["Month"].isna().all():
+            period = (df["Month"].dt.year == sel_year) & (
+                df["Month"].dt.month == sel_mon
+            )
+        else:
+            period = (df["Date"].dt.year == sel_year) & (df["Date"].dt.month == sel_mon)
+        # Filter by card (stored in a hidden Card column if present, else show all)
+        if "Card" in df.columns:
+            card_match = df["Card"] == card_name
+        return df[period & card_match].copy()
+
+    tx = _filter(cred_df)
+
+    total_spending = tx["Amount"].sum() if not tx.empty else 0.0
+
+    # ── Metrics ───────────────────────────────────────────────────────────────
+    col_m1, col_m2, col_m3 = st.columns(3)
+    col_m1.metric("Total Charges", f"${total_spending:,.2f}")
+    col_m2.metric("# Transactions", len(tx))
+    if not tx.empty:
+        cat_top = tx.groupby("Category")["Amount"].sum().idxmax()
+        col_m3.metric("Top Category", cat_top)
 
     st.markdown("---")
 
-    if not tx_df.empty:
-        m = (
-            tx_df["Account"].isin(accounts)
-            & (tx_df["Date"].dt.year == sel_year)
-            & (tx_df["Date"].dt.month == sel_mon)
-            & (tx_df["Type"] == "Expense")
-        )
-        month_exp = tx_df[m]
-        if not month_exp.empty:
+    # ── Transaction editor ────────────────────────────────────────────────────
+    st.markdown("##### 📋 Transactions")
+    orig = _build_display(tx)
+
+    edited = st.data_editor(
+        orig,
+        key=f"credit_tx_editor_{month_key}_{card_name}",
+        num_rows="dynamic",
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "_SheetRow": None,
+            "Date": st.column_config.TextColumn(
+                "Date (MM/DD)", default=today.strftime("%m/%d")
+            ),
+            "Description": st.column_config.TextColumn("Description", default=""),
+            "Category": st.column_config.SelectboxColumn(
+                "Category",
+                options=expense_cats or ["General"],
+                default=expense_cats[0] if expense_cats else "General",
+                required=True,
+            ),
+            "Amount": st.column_config.NumberColumn(
+                "Amount ($)", min_value=0.0, format="$%.2f", default=0.0
+            ),
+        },
+    )
+
+    if st.button("💾 Save Transactions", key=f"save_credit_{month_key}_{card_name}"):
+        _sync_changes(orig, edited, month_key, card_name)
+
+    # ── Spending breakdown chart ──────────────────────────────────────────────
+    if not tx.empty:
+        try:
             import plotly.express as px
 
-            st.markdown("#### 📊 Spending Breakdown")
-            cat_totals = month_exp.groupby("Category")["Amount"].sum().reset_index()
+            st.markdown("---")
+            st.markdown("##### 📊 Spending Breakdown")
+            cat_totals = tx.groupby("Category")["Amount"].sum().reset_index()
             fig = px.pie(
                 cat_totals,
                 names="Category",
@@ -83,61 +128,80 @@ def render_accounts(
             fig.update_layout(
                 paper_bgcolor="rgba(0,0,0,0)",
                 font_color="#e0e0e0",
-                height=340,
+                height=320,
                 margin=dict(t=20, b=20),
             )
-            st.plotly_chart(fig, width="stretch")
+            st.plotly_chart(fig, use_container_width=True)
+        except ImportError:
+            pass
 
-    st.markdown("---")
 
-    with st.expander("➕ Log Transaction", expanded=False):
-        with st.form(f"log_tx_{section_title}"):
-            c1, c2 = st.columns(2)
-            tx_date = c1.date_input("Date", value=today)
-            tx_type = c2.selectbox("Type", ["Expense", "Income", "Transfer"])
-            c3, c4 = st.columns(2)
-            tx_account = c3.selectbox("Account", accounts or ["—"])
-            cat_opts = (
-                expense_cats
-                if tx_type == "Expense"
-                else income_cats if tx_type == "Income" else ["Transfer"]
-            )
-            tx_cat = c4.selectbox("Category", cat_opts or ["—"])
-            c5, c6 = st.columns(2)
-            tx_amount = c5.number_input(
-                "Amount ($)", min_value=0.0, step=0.01, format="%.2f"
-            )
-            tx_desc = c6.text_input("Description (optional)")
-            submitted = st.form_submit_button("Save Transaction", type="primary")
+def _build_display(tx):
+    """Prepare the Credit Transactions dataframe for the data editor."""
+    cols = ["_SheetRow", "Date", "Description", "Category", "Amount"]
+    if tx.empty:
+        return pd.DataFrame(
+            {
+                "_SheetRow": pd.Series([], dtype="Int64"),
+                "Date": pd.Series([], dtype="str"),
+                "Description": pd.Series([], dtype="str"),
+                "Category": pd.Series([], dtype="str"),
+                "Amount": pd.Series([], dtype="float"),
+            }
+        )
+    df = tx.copy().reset_index(drop=True)
+    df["Date"] = df["Date"].dt.strftime("%m/%d")
+    df["Description"] = df.get("Description", "").fillna("").astype(str)
+    df["Amount"] = df["Amount"].round(2)
+    return df[cols]
 
-        if submitted:
-            with st.spinner("Saving…"):
-                append_transaction(
-                    tx_date.strftime("%m/%d/%Y"),
-                    tx_type,
-                    tx_account,
-                    tx_cat,
-                    tx_amount,
-                    tx_desc,
+
+def _sync_changes(orig, edited, month_key, card_name):
+    orig_len = len(orig)
+    saved = 0
+
+    with st.spinner("Saving…"):
+        for idx in range(len(edited)):
+            row = edited.iloc[idx]
+            amt = row.get("Amount", 0)
+            date_val = str(row.get("Date", "")).strip()
+            if pd.isna(amt) or amt == 0 or date_val in ("", "nan", "NaT", "None"):
+                continue
+            cat = row.get("Category") or "General"
+
+            if idx < orig_len:
+                old = orig.iloc[idx]
+                if (
+                    old["Date"] != row["Date"]
+                    or str(old["Description"]) != str(row["Description"])
+                    or old["Category"] != cat
+                    or old["Amount"] != row["Amount"]
+                ):
+                    year = month_key[:4]
+                    full_date = f"{row['Date']}/{year}"
+                    update_credit_tx_row(
+                        int(old["_SheetRow"]),
+                        full_date,
+                        month_key,
+                        str(row["Description"]),
+                        cat,
+                        float(row["Amount"]),
+                    )
+                    saved += 1
+            else:
+                year = month_key[:4]
+                full_date = f"{row['Date']}/{year}"
+                append_credit_tx(
+                    full_date,
+                    month_key,
+                    str(row["Description"]),
+                    cat,
+                    float(row["Amount"]),
                 )
-            st.success("Transaction saved!")
-            st.rerun()
+                saved += 1
 
-    with st.expander("⚙️ Override Starting Balance", expanded=False):
-        with st.form(f"override_bal_{section_title}"):
-            c1, c2 = st.columns(2)
-            ov_account = c1.selectbox(
-                "Account", accounts or ["—"], key=f"ov_{section_title}"
-            )
-            ov_balance = c2.number_input(
-                "Starting Balance ($)",
-                step=0.01,
-                format="%.2f",
-                key=f"ovbal_{section_title}",
-            )
-            if st.form_submit_button("Set Override"):
-                month_str = datetime.date(sel_year, sel_mon, 1).strftime("%Y-%m-01")
-                with st.spinner("Saving…"):
-                    upsert_starting_balance(month_str, ov_account, ov_balance)
-                st.success(f"Override set for {ov_account}.")
-                st.rerun()
+    if saved:
+        st.success(f"Saved {saved} change(s)!")
+        st.rerun()
+    else:
+        st.info("No changes detected.")

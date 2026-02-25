@@ -247,7 +247,7 @@ def _build_in_display(income_tx):
             }
         )
     df = income_tx.copy().reset_index(drop=True)
-    df["Date"] = df["Date"].dt.strftime("%m/%d/%Y")
+    df["Date"] = df["Date"].dt.strftime("%m/%d")
     df["Description"] = df.get("Description", "").fillna("").astype(str)
     df["Amount"] = df["Amount"].round(2)
     return df[cols]
@@ -267,7 +267,7 @@ def _build_out_display(spending_tx):
             }
         )
     df = spending_tx.copy().reset_index(drop=True)
-    df["Date"] = df["Date"].dt.strftime("%m/%d/%Y")
+    df["Date"] = df["Date"].dt.strftime("%m/%d")
     df["Description"] = df.get("Description", "").fillna("").astype(str)
     df["Amount"] = df["Amount"].round(2)
 
@@ -291,7 +291,7 @@ def _cash_in_editor(income_tx, month_key, today):
         column_config={
             "_SheetRow": None,
             "Date": st.column_config.TextColumn(
-                "Date (MM/DD/YYYY)", default=today.strftime("%m/%d/%Y")
+                "Date (MM/DD)", default=today.strftime("%m/%d")
             ),
             "Description": st.column_config.TextColumn("Description", default=""),
             "Amount": st.column_config.NumberColumn(
@@ -322,17 +322,21 @@ def _sync_in_changes(orig, edited, month_key):
                     or str(old["Description"]) != str(row["Description"])
                     or old["Amount"] != row["Amount"]
                 ):
+                    year = month_key[:4]
+                    full_date = f"{row['Date']}/{year}"
                     update_cash_in_row(
                         int(old["_SheetRow"]),
-                        row["Date"],
+                        full_date,
                         month_key,
                         str(row["Description"]),
                         float(row["Amount"]),
                     )
                     saved += 1
             else:
+                year = month_key[:4]
+                full_date = f"{row['Date']}/{year}"
                 append_cash_in(
-                    row["Date"],
+                    full_date,
                     month_key,
                     str(row["Description"]),
                     float(row["Amount"]),
@@ -358,7 +362,7 @@ def _cash_out_editor(spending_tx, month_key, today, bank_accounts):
         column_config={
             "_SheetRow": None,  # hidden
             "Date": st.column_config.TextColumn(
-                "Date (MM/DD/YYYY)", default=today.strftime("%m/%d/%Y")
+                "Date (MM/DD)", default=today.strftime("%m/%d")
             ),
             "Description": st.column_config.TextColumn("Description", default=""),
             "Category": st.column_config.SelectboxColumn(
@@ -398,9 +402,11 @@ def _sync_out_changes(orig, edited, month_key, bank_accounts):
                     or old["Category"] != cat
                     or old["Amount"] != row["Amount"]
                 ):
+                    year = month_key[:4]
+                    full_date = f"{row['Date']}/{year}"
                     update_cash_out_row(
                         int(old["_SheetRow"]),
-                        row["Date"],
+                        full_date,
                         month_key,
                         str(row["Description"]),
                         cat,
@@ -408,8 +414,10 @@ def _sync_out_changes(orig, edited, month_key, bank_accounts):
                     )
                     saved += 1
             else:
+                year = month_key[:4]
+                full_date = f"{row['Date']}/{year}"
                 append_cash_out(
-                    row["Date"],
+                    full_date,
                     month_key,
                     str(row["Description"]),
                     cat,
@@ -423,7 +431,7 @@ def _sync_out_changes(orig, edited, month_key, bank_accounts):
                         else "From cash"
                     )
                     append_debit_in(
-                        row["Date"],
+                        full_date,
                         month_key,
                         desc,
                         float(row["Amount"]),

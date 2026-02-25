@@ -223,7 +223,7 @@ def _build_debit_in_display(df_tx):
             }
         )
     df = df_tx.copy().reset_index(drop=True)
-    df["Date"] = df["Date"].dt.strftime("%m/%d/%Y")
+    df["Date"] = df["Date"].dt.strftime("%m/%d")
     df["Description"] = df.get("Description", "").fillna("").astype(str)
     df["Amount"] = df["Amount"].round(2)
     return df[cols]
@@ -242,7 +242,7 @@ def _build_debit_out_display(df_tx):
             }
         )
     df = df_tx.copy().reset_index(drop=True)
-    df["Date"] = df["Date"].dt.strftime("%m/%d/%Y")
+    df["Date"] = df["Date"].dt.strftime("%m/%d")
     df["Description"] = df.get("Description", "").fillna("").astype(str)
     df["Amount"] = df["Amount"].round(2)
 
@@ -264,7 +264,7 @@ def _debit_in_editor(df_tx, month_key, today):
         column_config={
             "_SheetRow": None,
             "Date": st.column_config.TextColumn(
-                "Date (MM/DD/YYYY)", default=today.strftime("%m/%d/%Y")
+                "Date (MM/DD)", default=today.strftime("%m/%d")
             ),
             "Description": st.column_config.TextColumn("Description", default=""),
             "Amount": st.column_config.NumberColumn(
@@ -293,20 +293,21 @@ def _sync_debit_in_changes(orig, edited, month_key):
                     or str(old["Description"]) != str(row["Description"])
                     or old["Amount"] != row["Amount"]
                 ):
+                    year = month_key[:4]
+                    full_date = f"{row['Date']}/{year}"
                     update_debit_in_row(
                         int(old["_SheetRow"]),
-                        row["Date"],
+                        full_date,
                         month_key,
                         str(row["Description"]),
                         float(row["Amount"]),
                     )
                     saved += 1
             else:
+                year = month_key[:4]
+                full_date = f"{row['Date']}/{year}"
                 append_debit_in(
-                    row["Date"],
-                    month_key,
-                    str(row["Description"]),
-                    float(row["Amount"]),
+                    full_date, month_key, str(row["Description"]), float(row["Amount"])
                 )
                 saved += 1
 
@@ -328,7 +329,7 @@ def _debit_out_editor(df_tx, month_key, today):
         column_config={
             "_SheetRow": None,
             "Date": st.column_config.TextColumn(
-                "Date (MM/DD/YYYY)", default=today.strftime("%m/%d/%Y")
+                "Date (MM/DD)", default=today.strftime("%m/%d")
             ),
             "Description": st.column_config.TextColumn("Description", default=""),
             "Category": st.column_config.SelectboxColumn(
@@ -365,9 +366,11 @@ def _sync_debit_out_changes(orig, edited, month_key):
                     or old["Category"] != cat
                     or old["Amount"] != row["Amount"]
                 ):
+                    year = month_key[:4]
+                    full_date = f"{row['Date']}/{year}"
                     update_debit_out_row(
                         int(old["_SheetRow"]),
-                        row["Date"],
+                        full_date,
                         month_key,
                         str(row["Description"]),
                         cat,
@@ -375,8 +378,10 @@ def _sync_debit_out_changes(orig, edited, month_key):
                     )
                     saved += 1
             else:
+                year = month_key[:4]
+                full_date = f"{row['Date']}/{year}"
                 append_debit_out(
-                    row["Date"],
+                    full_date,
                     month_key,
                     str(row["Description"]),
                     cat,

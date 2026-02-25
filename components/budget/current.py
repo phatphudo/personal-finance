@@ -3,33 +3,31 @@ import datetime
 import streamlit as st
 
 from components.budget.current_cash import render_cash
-from components.budget.current_credit import render_accounts
+from components.budget.current_credit import render_credit
 from components.budget.current_debit import render_debit
 from utils.gsheets import (
     read_cash_counts,
     read_cash_in,
     read_cash_out,
+    read_credit_tx,
     read_debit_in,
     read_debit_out,
     read_settings,
-    read_starting_balances,
-    read_transactions,
 )
-from utils.helpers import get_all_months, month_label
+from utils.helpers import month_label
 
 
 def render():
     st.markdown("## 💳 Monthly Budget")
 
     try:
-        tx_df = read_transactions()
-        sb_df = read_starting_balances()
         settings = read_settings()
         cc_df = read_cash_counts()
         ci_df = read_cash_in()
         co_df = read_cash_out()
         di_df = read_debit_in()
         do_df = read_debit_out()
+        cred_df = read_credit_tx()
     except Exception as e:
         st.error(f"Could not load data: {e}")
         return
@@ -38,7 +36,6 @@ def render():
     bank_accounts = settings.get("Bank Accounts", [])
     credit_cards = settings.get("Credit Cards", [])
     expense_cats = settings.get("Spending Categories", [])
-    income_cats = settings.get("Income Categories", [])
 
     # Vault is the first cash source by convention; all others are "active"
     vault_source = cash_sources[0] if cash_sources else "Vault"
@@ -46,7 +43,13 @@ def render():
 
     # ── Month selector ─────────────────────────────────────────────────────
     today = datetime.date.today()
-    all_months = get_all_months(tx_df) if not tx_df.empty else []
+    # Derive available months from billing-period Month columns across all data sources
+    _month_set = set()
+    for _df in (ci_df, di_df, cred_df):
+        if not _df.empty and "Month" in _df.columns:
+            for m in _df["Month"].dropna():
+                _month_set.add(datetime.date(m.year, m.month, 1))
+    all_months = sorted(_month_set, reverse=True)
     current_month = datetime.date(today.year, today.month, 1)
     if current_month not in all_months:
         all_months = [current_month] + list(all_months)
@@ -102,14 +105,12 @@ def render():
         )
 
     with tab_credit:
-        render_accounts(
-            "Credit Card",
-            credit_cards,
-            tx_df,
-            sb_df,
+        render_credit(
+            cred_df,
             sel_year,
             sel_mon,
+            month_key,
             today,
+            credit_cards,
             expense_cats,
-            income_cats,
         )
