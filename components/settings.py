@@ -119,20 +119,20 @@ def render():
     # ── Categories ────────────────────────────────────────────────────────
     st.markdown("---")
     st.markdown("### 🏷️ Transaction Categories")
-    col_exp, col_inc = st.columns(2)
-    with col_exp:
-        new_expense_cats = _list_editor(
-            "Spending Categories",
-            SETTING_DESCRIPTIONS["Spending Categories"],
-            settings["Spending Categories"],
-            key="set_expense_cats",
-        )
+    col_inc, col_exp = st.columns(2)
     with col_inc:
         new_income_cats = _list_editor(
             "Income Categories",
             SETTING_DESCRIPTIONS["Income Categories"],
             settings["Income Categories"],
             key="set_income_cats",
+        )
+    with col_exp:
+        new_expense_cats = _list_editor(
+            "Spending Categories",
+            SETTING_DESCRIPTIONS["Spending Categories"],
+            settings["Spending Categories"],
+            key="set_expense_cats",
         )
 
     # ── Save ──────────────────────────────────────────────────────────────

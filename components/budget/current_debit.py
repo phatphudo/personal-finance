@@ -28,6 +28,7 @@ def render_debit(
     month_key,
     today,
     bank_accounts,
+    income_cats,
 ):
     if not bank_accounts:
         st.info("No Debit Accounts configured. Add them in ⚙️ Settings.")
@@ -217,7 +218,7 @@ def render_debit(
     col_in, col_out = st.columns(2)
     with col_in:
         st.markdown("##### ⬇️ Debit In (Income)")
-        _debit_in_editor(income_tx, month_key, today)
+        _debit_in_editor(income_tx, month_key, today, income_cats)
 
     with col_out:
         st.markdown("##### ⬆️ Debit Out (Spending)")
@@ -225,19 +226,21 @@ def render_debit(
 
 
 def _build_debit_in_display(df_tx):
-    cols = ["_SheetRow", "Date", "Description", "Amount"]
+    cols = ["_SheetRow", "Date", "Description", "Category", "Amount"]
     if df_tx.empty:
         return pd.DataFrame(
             {
                 "_SheetRow": pd.Series([], dtype="Int64"),
                 "Date": pd.Series([], dtype="str"),
                 "Description": pd.Series([], dtype="str"),
+                "Category": pd.Series([], dtype="str"),
                 "Amount": pd.Series([], dtype="float"),
             }
         )
     df = df_tx.copy().reset_index(drop=True)
     df["Date"] = df["Date"].dt.strftime("%m/%d")
     df["Description"] = df.get("Description", "").fillna("").astype(str)
+    df["Category"] = df.get("Category", "").fillna("").astype(str)
     df["Amount"] = df["Amount"].astype(float).round(2)
     return df[cols]
 
@@ -266,8 +269,12 @@ def _build_debit_out_display(df_tx):
     return df[cols]
 
 
-def _debit_in_editor(df_tx, month_key, today):
+def _debit_in_editor(df_tx, month_key, today, income_cats):
     orig = _build_debit_in_display(df_tx)
+
+    if not income_cats:
+        income_cats = ["Other"]
+
     edited = st.data_editor(
         orig,
         key=f"debit_in_editor_{month_key}",
@@ -280,6 +287,12 @@ def _debit_in_editor(df_tx, month_key, today):
                 "Date (MM/DD)", default=today.strftime("%m/%d")
             ),
             "Description": st.column_config.TextColumn("Description", default=""),
+            "Category": st.column_config.SelectboxColumn(
+                "Category",
+                options=income_cats,
+                default=income_cats[0],
+                required=True,
+            ),
             "Amount": st.column_config.NumberColumn(
                 "Amount ($)", min_value=0.0, format="$%.2f", default=0.0
             ),
@@ -304,6 +317,7 @@ def _sync_debit_in_changes(orig, edited, month_key):
                 if (
                     old["Date"] != row["Date"]
                     or str(old["Description"]) != str(row["Description"])
+                    or str(old["Category"]) != str(row["Category"])
                     or old["Amount"] != row["Amount"]
                 ):
                     year = month_key[:4]
@@ -313,6 +327,7 @@ def _sync_debit_in_changes(orig, edited, month_key):
                         full_date,
                         month_key,
                         str(row["Description"]),
+                        str(row["Category"]),
                         float(row["Amount"]),
                     )
                     saved += 1
@@ -320,7 +335,11 @@ def _sync_debit_in_changes(orig, edited, month_key):
                 year = month_key[:4]
                 full_date = f"{row['Date']}/{year}"
                 append_debit_in(
-                    full_date, month_key, str(row["Description"]), float(row["Amount"])
+                    full_date,
+                    month_key,
+                    str(row["Description"]),
+                    str(row["Category"]),
+                    float(row["Amount"]),
                 )
                 saved += 1
 

@@ -64,11 +64,13 @@ def get_or_create_worksheet(tab_name: str) -> gspread.Worksheet:
             ws.append_row(["Date", "Clock In", "Clock Out", "Status"])
         elif tab_name == TAB_STARTING_BALANCES:
             ws.append_row(["Month", "Account", "Starting Balance"])
-        elif tab_name in (TAB_CASH_IN, TAB_DEBIT_IN):
-            ws.append_row(["Date", "Month", "Description", "Amount"])
-        elif tab_name in (TAB_CASH_OUT, TAB_DEBIT_OUT):
-            ws.append_row(["Date", "Month", "Description", "Category", "Amount"])
-        elif tab_name == TAB_CREDIT_TX:
+        elif tab_name in (
+            TAB_CASH_IN,
+            TAB_DEBIT_IN,
+            TAB_CASH_OUT,
+            TAB_DEBIT_OUT,
+            TAB_CREDIT_TX,
+        ):
             ws.append_row(["Date", "Month", "Description", "Category", "Amount"])
     return ws
 

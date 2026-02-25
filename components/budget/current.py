@@ -38,6 +38,7 @@ def render():
     bank_accounts = settings.get("Bank Accounts", [])
     credit_cards = settings.get("Credit Cards", [])
     expense_cats = settings.get("Spending Categories", [])
+    income_cats = settings.get("Income Categories", [])
 
     # Vault is the first cash source by convention; all others are "active"
     vault_source = cash_sources[0] if cash_sources else "Vault"
@@ -93,6 +94,7 @@ def render():
             vault_source,
             active_sources,
             bank_accounts,
+            income_cats,
         )
 
     with tab_debit:
@@ -106,6 +108,7 @@ def render():
             month_key,
             today,
             bank_accounts,
+            income_cats,
         )
 
     with tab_credit:

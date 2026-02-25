@@ -23,9 +23,14 @@ def read_cash_out() -> pd.DataFrame:
     return df.dropna(subset=["Date"])
 
 
-def append_cash_in(date: str, month: str, description: str, amount: float):
+def append_cash_in(
+    date: str, month: str, description: str, category: str, amount: float
+):
     ws = core.get_or_create_worksheet(core.TAB_CASH_IN)
-    ws.append_row([date, month, description, amount], value_input_option="USER_ENTERED")
+    ws.append_row(
+        [date, month, description, category, amount],
+        value_input_option="USER_ENTERED",
+    )
     core.invalidate_cache()
 
 
@@ -41,12 +46,17 @@ def append_cash_out(
 
 
 def update_cash_in_row(
-    sheet_row: int, date: str, month: str, description: str, amount: float
+    sheet_row: int,
+    date: str,
+    month: str,
+    description: str,
+    category: str,
+    amount: float,
 ):
     ws = core.get_or_create_worksheet(core.TAB_CASH_IN)
     ws.update(
-        values=[[date, month, description, amount]],
-        range_name=f"A{sheet_row}:D{sheet_row}",
+        values=[[date, month, description, category, amount]],
+        range_name=f"A{sheet_row}:E{sheet_row}",
         value_input_option="USER_ENTERED",
     )
     core.invalidate_cache()

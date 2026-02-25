@@ -33,6 +33,7 @@ def render_cash(
     vault_source,
     active_sources,
     bank_accounts,
+    income_cats,
 ):
     if not cash_sources:
         st.info("No Cash Sources configured. Add them in ⚙️ Settings.")
@@ -238,7 +239,7 @@ def render_cash(
 
     with col_in:
         st.markdown("##### ⬆️ Cash In (Income)")
-        _cash_in_editor(income_tx, month_key, today)
+        _cash_in_editor(income_tx, month_key, today, income_cats)
 
     with col_out:
         st.markdown("##### ⬇️ Cash Out (Spending)")
@@ -247,19 +248,21 @@ def render_cash(
 
 def _build_in_display(income_tx):
     """Prepare the Cash In dataframe for the data editor."""
-    cols = ["_SheetRow", "Date", "Description", "Amount"]
+    cols = ["_SheetRow", "Date", "Description", "Category", "Amount"]
     if income_tx.empty:
         return pd.DataFrame(
             {
                 "_SheetRow": pd.Series([], dtype="Int64"),
                 "Date": pd.Series([], dtype="str"),
                 "Description": pd.Series([], dtype="str"),
+                "Category": pd.Series([], dtype="str"),
                 "Amount": pd.Series([], dtype="float"),
             }
         )
     df = income_tx.copy().reset_index(drop=True)
     df["Date"] = df["Date"].dt.strftime("%m/%d")
     df["Description"] = df.get("Description", "").fillna("").astype(str)
+    df["Category"] = df.get("Category", "").fillna("").astype(str)
     df["Amount"] = df["Amount"].astype(float).round(2)
     return df[cols]
 
@@ -290,8 +293,11 @@ def _build_out_display(spending_tx):
     return df[cols]
 
 
-def _cash_in_editor(income_tx, month_key, today):
+def _cash_in_editor(income_tx, month_key, today, income_cats):
     orig = _build_in_display(income_tx)
+
+    if not income_cats:
+        income_cats = ["Other"]
 
     edited = st.data_editor(
         orig,
@@ -305,6 +311,12 @@ def _cash_in_editor(income_tx, month_key, today):
                 "Date (MM/DD)", default=today.strftime("%m/%d")
             ),
             "Description": st.column_config.TextColumn("Description", default=""),
+            "Category": st.column_config.SelectboxColumn(
+                "Category",
+                options=income_cats,
+                default=income_cats[0],
+                required=True,
+            ),
             "Amount": st.column_config.NumberColumn(
                 "Amount ($)", min_value=0.0, format="$%.2f", default=0.0
             ),
@@ -331,6 +343,7 @@ def _sync_in_changes(orig, edited, month_key):
                 if (
                     old["Date"] != row["Date"]
                     or str(old["Description"]) != str(row["Description"])
+                    or str(old["Category"]) != str(row["Category"])
                     or old["Amount"] != row["Amount"]
                 ):
                     year = month_key[:4]
@@ -340,6 +353,7 @@ def _sync_in_changes(orig, edited, month_key):
                         full_date,
                         month_key,
                         str(row["Description"]),
+                        str(row["Category"]),
                         float(row["Amount"]),
                     )
                     saved += 1
@@ -350,6 +364,7 @@ def _sync_in_changes(orig, edited, month_key):
                     full_date,
                     month_key,
                     str(row["Description"]),
+                    str(row["Category"]),
                     float(row["Amount"]),
                 )
                 saved += 1
@@ -445,6 +460,7 @@ def _sync_out_changes(orig, edited, month_key, bank_accounts):
                         full_date,
                         month_key,
                         desc,
+                        "Deposit",
                         float(row["Amount"]),
                     )
                 saved += 1
