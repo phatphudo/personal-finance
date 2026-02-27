@@ -115,10 +115,17 @@ Run `make help` (or just `make`) to see all available targets.
 | `make build-no-cache` | Rebuild from scratch (ignores layer cache) |
 | `make run` | Start the container, mount secrets, expose port 8501 |
 | `make stop` | Stop and remove the container |
-| `make restart` | `stop` + `run` in one command |
+| `make restart` | `stop` + `run` in one command (no rebuild) |
+| `make redeploy` | `stop` → `build` → `prune` → `run` — full rebuild cycle |
+| `make prune` | Remove dangling (untagged) Docker images |
 | `make logs` | Tail container logs (`Ctrl-C` to exit) |
 | `make shell` | Open a bash shell inside the running container |
 | `make clean` | Remove the Docker image |
+
+> **Typical workflow after code changes:**
+> ```bash
+> make redeploy   # rebuilds image, cleans old layers, starts a fresh container
+> ```
 
 You can override defaults at call-time:
 

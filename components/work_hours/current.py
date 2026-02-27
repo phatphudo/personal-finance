@@ -124,48 +124,52 @@ def render():
         week1_df = period_df[week1_mask]
         week2_df = period_df[~week1_mask]
 
+        VIEW_COLS = [
+            "_SheetRow",
+            "Weekday",
+            "Date",
+            "Clock In",
+            "Clock Out",
+            "Status",
+            "Hours and Minutes",
+            "Hours",
+        ]
+
+        def _build_display(w_df):
+            """Return a display-ready DataFrame (strings, no datetimes)."""
+            d = w_df.copy().reset_index(drop=True)
+            d["Weekday"] = d["Date"].dt.strftime("%A")
+            d["Date"] = d["Date"].dt.strftime("%m/%d/%Y")
+            d["Clock In"] = d["Clock In"].dt.strftime("%H:%M")
+            d["Clock Out"] = d["Clock Out"].dt.strftime("%H:%M")
+            d["Hours and Minutes"] = d["Hours"].apply(_fmt_hm)
+            d["Hours"] = d["Hours"].round(2)
+            return d[VIEW_COLS]
+
         def _render_week(w_df, title, key):
+            """Render one week's data editor. Returns (orig, edited) DataFrames,
+            or (None, None) when the week has no data."""
             if w_df.empty:
                 st.markdown(f"**{title}** — *No shifts logged*")
-                return
+                return None, None
 
             w_total = w_df["Hours"].sum()
             st.markdown(f"**{title}**")
 
-            # Show inline metrics for this specific week
             metrics_parts = [f"**Hours:** {w_total:.2f}"]
             for name, rate in hourly_rates.items():
                 w_pay = w_total * rate
                 metrics_parts.append(f"**{name} (\${rate:.2f})** = \${w_pay:,.2f}")
             st.caption(" | ".join(metrics_parts))
 
-            display = w_df.copy().reset_index(drop=True)
-            display["Weekday"] = display["Date"].dt.strftime("%A")
-            display["Date"] = display["Date"].dt.strftime("%m/%d/%Y")
-            display["Clock In"] = display["Clock In"].dt.strftime("%H:%M")
-            display["Clock Out"] = display["Clock Out"].dt.strftime("%H:%M")
-            display["Hours and Minutes"] = display["Hours"].apply(_fmt_hm)
-            display["Hours"] = display["Hours"].round(2)
-
-            view_cols = [
-                "_SheetRow",
-                "Weekday",
-                "Date",
-                "Clock In",
-                "Clock Out",
-                "Status",
-                "Hours and Minutes",
-                "Hours",
-            ]
-
-            # Show interactive editor (auto-saves on change)
-            edited_df = st.data_editor(
-                display[view_cols],
+            orig = _build_display(w_df)
+            edited = st.data_editor(
+                orig,
                 key=key,
                 width="stretch",
                 hide_index=True,
                 column_config={
-                    "_SheetRow": None,  # completely hide
+                    "_SheetRow": None,
                     "Weekday": st.column_config.Column(disabled=True),
                     "Status": st.column_config.SelectboxColumn(
                         "Status", options=["Actual", "Scheduled"], required=True
@@ -174,38 +178,53 @@ def render():
                     "Hours": st.column_config.Column(disabled=True),
                 },
             )
-
-            # Auto-save changes back to Google Sheets
-            for idx in range(len(display)):
-                old = display.iloc[idx]
-                new = edited_df.iloc[idx]
-                if (
-                    old["Date"] != new["Date"]
-                    or old["Clock In"] != new["Clock In"]
-                    or old["Clock Out"] != new["Clock Out"]
-                    or old["Status"] != new["Status"]
-                ):
-                    from utils.gsheets import update_work_hours_row
-
-                    with st.spinner("Saving edits..."):
-                        update_work_hours_row(
-                            int(old["_SheetRow"]),
-                            new["Date"],
-                            new["Clock In"],
-                            new["Clock Out"],
-                            new["Status"],
-                        )
-                    st.success("✅ Row updated automatically!")
-                    st.rerun()
+            return orig, edited
 
         col_w1, col_w2 = st.columns(2)
         w1_title = f"Week 1 ({period_start.strftime('%m/%d')} – {(period_start + datetime.timedelta(days=6)).strftime('%m/%d')})"
         w2_title = f"Week 2 ({(period_start + datetime.timedelta(days=7)).strftime('%m/%d')} – {(period_start + datetime.timedelta(days=13)).strftime('%m/%d')})"
 
         with col_w1:
-            _render_week(week1_df, w1_title, "wk1_editor")
+            orig_w1, edited_w1 = _render_week(week1_df, w1_title, "wk1_editor")
         with col_w2:
-            _render_week(week2_df, w2_title, "wk2_editor")
+            orig_w2, edited_w2 = _render_week(week2_df, w2_title, "wk2_editor")
+
+        # ── Save Shift Changes button ───────────────────────────────────────
+        if st.button("💾 Save Shift Changes", key="save_shift_changes", type="primary"):
+            from utils.gsheets import update_work_hours_row
+
+            saved = 0
+            pairs = []
+            if orig_w1 is not None:
+                pairs.append((orig_w1, edited_w1))
+            if orig_w2 is not None:
+                pairs.append((orig_w2, edited_w2))
+
+            with st.spinner("Saving shift changes…"):
+                for orig, edited in pairs:
+                    for idx in range(len(orig)):
+                        old = orig.iloc[idx]
+                        new = edited.iloc[idx]
+                        if (
+                            old["Date"] != new["Date"]
+                            or old["Clock In"] != new["Clock In"]
+                            or old["Clock Out"] != new["Clock Out"]
+                            or old["Status"] != new["Status"]
+                        ):
+                            update_work_hours_row(
+                                int(old["_SheetRow"]),
+                                new["Date"],
+                                new["Clock In"],
+                                new["Clock Out"],
+                                new["Status"],
+                            )
+                            saved += 1
+
+            if saved:
+                st.success(f"✅ Saved {saved} shift change(s)!")
+                st.rerun()
+            else:
+                st.info("No changes detected.")
 
         st.markdown("---")
         # Daily bar chart

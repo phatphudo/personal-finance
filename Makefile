@@ -2,7 +2,7 @@ IMAGE   := personal-finance
 PORT    := 8501
 CONTAINER := finance
 
-.PHONY: help build run stop logs restart shell clean dev
+.PHONY: help build build-no-cache run stop restart redeploy prune logs shell clean dev
 
 ## ── Help ─────────────────────────────────────────────────────────────────────
 help: ## Show this help message
@@ -26,9 +26,15 @@ run: ## Run the container (mounts secrets, exposes port $(PORT))
 	@echo "Dashboard → http://localhost:$(PORT)"
 
 stop: ## Stop and remove the container
-	docker stop $(CONTAINER) && docker rm $(CONTAINER)
+	-docker stop $(CONTAINER)
+	-docker rm $(CONTAINER)
 
-restart: stop run ## Restart the container
+restart: stop run ## Restart the container (no rebuild)
+
+redeploy: stop build prune run ## Stop → rebuild → prune dangling images → start fresh container
+
+prune: ## Remove dangling (untagged) Docker images
+	docker image prune -f
 
 logs: ## Tail container logs
 	docker logs -f $(CONTAINER)
