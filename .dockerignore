@@ -1,0 +1,23 @@
+# Git
+.git
+.gitignore
+
+# Python byte-code & caches
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+
+# Virtual environment (we rebuild it inside Docker)
+.venv/
+
+# Secrets — never bake into the image
+.secret/
+.streamlit/secrets.toml
+
+# Dev tooling
+.python-version
+*.md
+
+# Misc
+.DS_Store
