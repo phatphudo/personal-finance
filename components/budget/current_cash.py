@@ -102,11 +102,16 @@ def render_cash(
     expected_balance = total_cash_in - total_cash_out
 
     # ── Actual balance from physical counts ────────────────────────────────
+    # NOTE: cc_df (cash_counts sheet) is shared — it also stores the debit
+    # account actual balance. Restrict both aggregates to cash_sources only
+    # so the debit balance never bleeds into cash metrics.
     actual_balance = 0.0
     total_in_hand = 0.0
     if not cc_df.empty:
         month_counts = cc_df[
-            (cc_df["Month"].dt.year == sel_year) & (cc_df["Month"].dt.month == sel_mon)
+            (cc_df["Month"].dt.year == sel_year)
+            & (cc_df["Month"].dt.month == sel_mon)
+            & (cc_df["Source"].isin(cash_sources))  # exclude debit account row
         ]
         active_counts = month_counts[month_counts["Source"].isin(active_sources)]
         actual_balance = active_counts["Amount"].sum()
