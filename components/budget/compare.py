@@ -63,7 +63,6 @@ def render():
 
     # Pre-process frames
     _EXCLUDE_SPENDING = ["Deposit to Debit", "Add to Vault", "Credit Card Payment"]
-    _EXCLUDE_INCOME = ["Deposit"]
 
     def _get_month_mask(df, m):
         if df is None or df.empty or "Month" not in df.columns:
@@ -92,14 +91,14 @@ def render():
         else pd.DataFrame()
     )
 
-    ci_clean = (
-        ci_df[~ci_df["Category"].isin(_EXCLUDE_INCOME)].copy()
-        if not ci_df.empty and "Category" in ci_df.columns
-        else pd.DataFrame()
-    )
+    # Cash In: all rows are real income — no category filter needed
+    ci_clean = ci_df.copy() if not ci_df.empty else pd.DataFrame()
+
+    # Debit In: exclude auto-generated cash-transfer rows (description starts with "From cash")
+    # This matches the logic in current_debit.py exactly.
     di_clean = (
-        di_df[~di_df["Category"].isin(_EXCLUDE_INCOME)].copy()
-        if not di_df.empty and "Category" in di_df.columns
+        di_df[~di_df["Description"].str.startswith("From cash", na=False)].copy()
+        if not di_df.empty and "Description" in di_df.columns
         else pd.DataFrame()
     )
 
@@ -137,8 +136,15 @@ def render():
             row_cat.update(by_cat.to_dict())
             cat_rows.append(row_cat)
 
+        # Networth = sum of all account balances (cash counts) for the month
+        nw = 0.0
+        if not cc_df.empty:
+            month_cc = cc_df[_get_month_mask(cc_df, m)]
+            if not month_cc.empty:
+                nw = month_cc["Amount"].sum()
+
         trend_rows.append(
-            {"Month": month_label(m), "Income": inc, "Expenses": exp, "Net": inc - exp}
+            {"Month": month_label(m), "Income": inc, "Expenses": exp, "Net": inc - exp, "Networth": nw}
         )
 
     trend_df = pd.DataFrame(trend_rows)
@@ -164,15 +170,13 @@ def render():
         )
     )
     fig_trend.add_trace(
-        go.Scatter(
-            name="Net",
+        go.Bar(
+            name="Networth",
             x=trend_df["Month"],
-            y=trend_df["Net"],
-            mode="lines+markers+text",
-            text=trend_df["Net"].map("${:,.0f}".format),
-            textposition="top center",
-            line=dict(color="#6C63FF", width=2),
-            marker=dict(size=8),
+            y=trend_df["Networth"],
+            marker_color="#F5A623",
+            text=trend_df["Networth"].map("${:,.0f}".format),
+            textposition="outside",
         )
     )
     fig_trend.update_layout(
@@ -282,7 +286,7 @@ def render():
         fmt = "${:,.2f}".format
         if not trend_df.empty:
             display = trend_df.copy()
-            for col in ["Income", "Expenses", "Net"]:
+            for col in ["Income", "Expenses", "Net", "Networth"]:
                 display[col] = display[col].map(fmt)
             st.dataframe(display, use_container_width=True, hide_index=True)
 
