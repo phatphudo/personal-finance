@@ -188,7 +188,7 @@ def render():
         margin=dict(t=20, b=60),
         xaxis_tickangle=-30,
     )
-    st.plotly_chart(fig_trend, use_container_width=True)
+    st.plotly_chart(fig_trend, width="stretch")
 
     # ── 2. Spending by category heatmap / grouped bars ─────────────────────
     st.markdown("---")
@@ -218,7 +218,7 @@ def render():
             margin=dict(t=20, b=60),
             xaxis_tickangle=-30,
         )
-        st.plotly_chart(fig_cat, use_container_width=True)
+        st.plotly_chart(fig_cat, width="stretch")
 
     # ── 3. Account ending balances over time ───────────────────────────────
     st.markdown("---")
@@ -278,7 +278,7 @@ def render():
                 margin=dict(t=20, b=60),
                 xaxis_tickangle=-30,
             )
-            st.plotly_chart(fig_bal, use_container_width=True)
+            st.plotly_chart(fig_bal, width="stretch")
 
     # ── 4. Raw summary table ───────────────────────────────────────────────
     st.markdown("---")
@@ -288,7 +288,7 @@ def render():
             display = trend_df.copy()
             for col in ["Income", "Expenses", "Net", "Networth"]:
                 display[col] = display[col].map(fmt)
-            st.dataframe(display, use_container_width=True, hide_index=True)
+            st.dataframe(display, width="stretch", hide_index=True)
 
     with st.expander("📋 Category Summary Table"):
         if not cat_df.empty:
@@ -296,5 +296,5 @@ def render():
             for col in display_cat.columns:
                 display_cat[col] = display_cat[col].map(fmt)
             st.dataframe(
-                display_cat.reset_index(), use_container_width=True, hide_index=True
+                display_cat.reset_index(), width="stretch", hide_index=True
             )

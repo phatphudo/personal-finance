@@ -137,7 +137,7 @@ def render_overview(
                         font_color="#e0e0e0",
                         margin=dict(t=40, b=20),
                     )
-                    st.plotly_chart(fig_bar_nw, use_container_width=True)
+                    st.plotly_chart(fig_bar_nw, width="stretch")
                 with c2:
                     nw_total = networth_all.groupby("Source", as_index=False)[
                         "Amount"
@@ -155,7 +155,7 @@ def render_overview(
                         font_color="#e0e0e0",
                         margin=dict(t=40, b=20),
                     )
-                    st.plotly_chart(fig_pie_nw, use_container_width=True)
+                    st.plotly_chart(fig_pie_nw, width="stretch")
             else:
                 st.info("No networth data for this month.")
 
@@ -180,7 +180,7 @@ def render_overview(
                         font_color="#e0e0e0",
                         margin=dict(t=40, b=20),
                     )
-                    st.plotly_chart(fig_bar_inc, use_container_width=True)
+                    st.plotly_chart(fig_bar_inc, width="stretch")
                 with c2:
                     inc_total = income_all.groupby("Category", as_index=False)[
                         "Amount"
@@ -198,7 +198,7 @@ def render_overview(
                         font_color="#e0e0e0",
                         margin=dict(t=40, b=20),
                     )
-                    st.plotly_chart(fig_pie_inc, use_container_width=True)
+                    st.plotly_chart(fig_pie_inc, width="stretch")
             else:
                 st.info("No income data for this month.")
 
@@ -223,7 +223,7 @@ def render_overview(
                         font_color="#e0e0e0",
                         margin=dict(t=40, b=20),
                     )
-                    st.plotly_chart(fig_bar, use_container_width=True)
+                    st.plotly_chart(fig_bar, width="stretch")
                 with c2:
                     spend_total = spending_all.groupby("Category", as_index=False)[
                         "Amount"
@@ -241,7 +241,7 @@ def render_overview(
                         font_color="#e0e0e0",
                         margin=dict(t=40, b=20),
                     )
-                    st.plotly_chart(fig_pie, use_container_width=True)
+                    st.plotly_chart(fig_pie, width="stretch")
             else:
                 st.info("No spending data for this month.")
 

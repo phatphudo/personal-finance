@@ -188,7 +188,7 @@ def render_cash(
             if st.button(
                 "💾 Save Starting Balance",
                 key=f"apply_remaining_{month_key}",
-                use_container_width=True,
+                width="stretch",
             ):
                 st.session_state[override_key] = new_remaining
                 with st.spinner("Saving..."):
@@ -226,7 +226,7 @@ def render_cash(
             if st.button(
                 "💾 Save Cash Counts",
                 key=f"save_cash_counts_{month_key}",
-                use_container_width=True,
+                width="stretch",
             ):
                 with st.spinner("Saving counts…"):
                     for src, amt in new_counts.items():

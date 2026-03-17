@@ -171,7 +171,7 @@ def render_debit(
             if st.button(
                 "💾 Save Starting Balance",
                 key=f"apply_debit_remaining_{month_key}",
-                use_container_width=True,
+                width="stretch",
             ):
                 st.session_state[override_key] = new_remaining
                 with st.spinner("Saving..."):
@@ -205,7 +205,7 @@ def render_debit(
             if st.button(
                 "💾 Save Actual Balance",
                 key=f"save_debit_count_{month_key}",
-                use_container_width=True,
+                width="stretch",
             ):
                 with st.spinner("Saving count…"):
                     upsert_cash_count(month_key, debit_account, new_count)
