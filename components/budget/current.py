@@ -47,16 +47,29 @@ def render():
 
     # ── Month selector ─────────────────────────────────────────────────────
     today = datetime.date.today()
-    # Derive available months from billing-period Month columns across all data sources
+
+    def _prev_month(d):
+        return (d.replace(day=1) - datetime.timedelta(days=1)).replace(day=1)
+
+    def _next_month(d):
+        return (d.replace(day=28) + datetime.timedelta(days=4)).replace(day=1)
+
+    # Collect months that already have transactions
     _month_set = set()
     for _df in (ci_df, di_df, cred_df):
         if not _df.empty and "Month" in _df.columns:
             for m in _df["Month"].dropna():
                 _month_set.add(datetime.date(m.year, m.month, 1))
-    all_months = sorted(_month_set, reverse=True)
+
     current_month = datetime.date(today.year, today.month, 1)
-    if current_month not in all_months:
-        all_months = [current_month] + list(all_months)
+    if _month_set:
+        oldest = min(_month_set)
+        newest = max(_month_set)
+        _month_set.add(_prev_month(oldest))  # 1 month before earliest
+        _month_set.add(_next_month(newest))  # 1 month after latest
+    _month_set.add(current_month)            # always include today's month
+    all_months = sorted(_month_set, reverse=True)
+
 
     month_options = {month_label(m): m for m in all_months}
     default_label = month_label(current_month)
