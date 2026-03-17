@@ -1,6 +1,3 @@
-import glob
-import os
-
 import gspread
 import pandas as pd
 import streamlit as st
@@ -21,26 +18,13 @@ TAB_DEBIT_IN = "Debit In"
 TAB_DEBIT_OUT = "Debit Out"
 TAB_CREDIT_TX = "Credit Transactions"
 
-# Resolve the service account JSON from the .secret/ folder next to this project
-_SECRET_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".secret")
-
-
-def _find_service_account_file() -> str:
-    """Return the path to the first JSON key file found in .secret/."""
-    matches = glob.glob(os.path.join(_SECRET_DIR, "*.json"))
-    if not matches:
-        raise FileNotFoundError(
-            f"No service account JSON found in {_SECRET_DIR}. "
-            "Download your key from Google Cloud Console and place it there."
-        )
-    return matches[0]
-
-
 @st.cache_resource(ttl=60)
 def get_client() -> gspread.Client:
-    """Authenticate and return a gspread client using the local JSON key file."""
-    key_path = _find_service_account_file()
-    creds = Credentials.from_service_account_file(key_path, scopes=SCOPES)
+    """Authenticate and return a gspread client using credentials from Streamlit secrets."""
+    creds = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=SCOPES,
+    )
     return gspread.authorize(creds)
 
 

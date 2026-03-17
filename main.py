@@ -7,7 +7,30 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Global CSS ────────────────────────────────────────────────────────────────
+# ── Login gate ────────────────────────────────────────────────────────────────
+if not st.session_state.get("authenticated"):
+    _, col, _ = st.columns([1, 1.2, 1])
+    with col:
+        st.markdown("## 💰 Finance Dashboard")
+        st.caption("Sign in to continue")
+        with st.form("login_form"):
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            submitted = st.form_submit_button("Sign in", use_container_width=True)
+
+        if submitted:
+            if (
+                username == st.secrets["auth"]["username"]
+                and password == st.secrets["auth"]["password"]
+            ):
+                st.session_state["authenticated"] = True
+                st.rerun()
+            else:
+                st.error("Invalid username or password.")
+
+    st.stop()
+
+
 st.markdown(
     """
     <style>
