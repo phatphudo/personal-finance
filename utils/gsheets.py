@@ -45,7 +45,7 @@ def get_or_create_worksheet(tab_name: str) -> gspread.Worksheet:
         ws = spreadsheet.add_worksheet(title=tab_name, rows=100, cols=20)
         # Add default headers for known tabs
         if tab_name == TAB_WORK_HOURS:
-            ws.append_row(["Date", "Clock In", "Clock Out", "Status"])
+            ws.append_row(["Date", "Clock In", "Clock Out", "Status", "Work Hours", "Break"])
         elif tab_name == TAB_STARTING_BALANCES:
             ws.append_row(["Month", "Account", "Starting Balance"])
         elif tab_name in (

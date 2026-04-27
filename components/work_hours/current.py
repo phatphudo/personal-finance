@@ -11,6 +11,46 @@ from utils.helpers import (
     get_pay_period_start,
 )
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+def _parse_hhmm(s: str) -> float | None:
+    """Parse HH:MM duration string to decimal hours. Returns None on failure."""
+    try:
+        parts = s.strip().split(":")
+        h, m = int(parts[0]), int(parts[1])
+        return h + m / 60
+    except Exception:
+        return None
+
+
+def _parse_time(s: str) -> datetime.time | None:
+    try:
+        return pd.to_datetime(s).time()
+    except Exception:
+        return None
+
+
+def _shift_hours(clock_in: str, clock_out: str) -> float | None:
+    """Return decimal hours between two HH:MM strings, or None if unparseable."""
+    ci = _parse_time(clock_in)
+    co = _parse_time(clock_out)
+    if ci is None or co is None:
+        return None
+    delta = datetime.datetime.combine(
+        datetime.date.today(), co
+    ) - datetime.datetime.combine(datetime.date.today(), ci)
+    return delta.total_seconds() / 3600
+
+
+def _fmt_hm(h_float) -> str:
+    """Format decimal hours as HH:MM."""
+    if pd.isna(h_float) or h_float is None:
+        return ""
+    hrs = int(h_float)
+    mins = int(round((h_float - hrs) * 60))
+    return f"{hrs:02d}:{mins:02d}"
+
 
 def render():
     st.markdown("## 🗓️ Current Pay Period")
@@ -33,7 +73,6 @@ def render():
 
     today = datetime.date.today()
 
-    # ── Log new shift ──────────────────────────────────────────────────────
     st.markdown("---")
     with st.expander("➕ Log New Shift", expanded=False):
         with st.form("log_shift_form"):
@@ -41,27 +80,42 @@ def render():
             shift_date = col1.date_input("Date", value=today)
             clock_in = col2.text_input("Clock In (HH:MM)", value="09:00")
             clock_out = col3.text_input("Clock Out (HH:MM)", value="17:00")
-            status = col4.selectbox("Status", ["Actual", "Scheduled"])
+            break_val = col4.text_input(
+                "Break (HH:MM)", value="00:00", help="Estimated break, e.g. 00:30"
+            )
             submitted = st.form_submit_button("Save Shift", type="primary")
 
         if submitted:
             try:
-                # Parse input string to ensure valid time
-                ci_time = pd.to_datetime(clock_in).time()
-                co_time = pd.to_datetime(clock_out).time()
+                ci_time = _parse_time(clock_in)
+                co_time = _parse_time(clock_out)
+                if ci_time is None or co_time is None:
+                    raise ValueError("bad time")
 
-                date_str = shift_date.strftime("%m/%d/%Y")
-                ci_str = ci_time.strftime("%H:%M")
-                co_str = co_time.strftime("%H:%M")
+                shift_h = _shift_hours(clock_in, clock_out)
+                break_f = _parse_hhmm(break_val)
+                if break_f is None:
+                    raise ValueError(f"Cannot parse '{break_val}' as HH:MM")
 
-                with st.spinner("Saving to Google Sheets…"):
-                    append_work_hours(date_str, ci_str, co_str, status)
-                st.success(f"Shift saved: [{status}] {date_str} {ci_str} → {co_str}")
-                st.rerun()
+                work_h = shift_h - break_f  # derived: shift − break
+
+                if work_h <= 0:
+                    st.error("⚠️ Break time equals or exceeds shift duration.")
+                else:
+                    date_str = shift_date.strftime("%m/%d/%Y")
+                    ci_str = ci_time.strftime("%H:%M")
+                    co_str = co_time.strftime("%H:%M")
+                    with st.spinner("Saving to Google Sheets…"):
+                        append_work_hours(
+                            date_str, ci_str, co_str, "Scheduled", break_time=break_val
+                        )
+                    st.success(
+                        f"Scheduled: {date_str} {ci_str}→{co_str} "
+                        f"| break: {break_val} | est. work: {_fmt_hm(work_h)}"
+                    )
+                    st.rerun()
             except Exception:
-                st.error(
-                    "⚠️ Invalid time format. Please enter as 24-hour HH:MM (e.g., '14:30' or '08:00')."
-                )
+                st.error("⚠️ Invalid input. Times must be HH:MM (e.g. 07:30).")
 
     # ── Period selector ────────────────────────────────────────────────────
     all_periods = get_all_pay_periods(df) if not df.empty else []
@@ -96,28 +150,23 @@ def render():
         period_df = pd.DataFrame()
 
     total_hours = period_df["Hours"].sum() if not period_df.empty else 0.0
+    total_break = period_df["Break"].sum() if not period_df.empty else 0.0
 
     # ── Pay summary metrics ────────────────────────────────────────────────
     st.markdown("---")
-    cols = st.columns(1 + len(hourly_rates))
-    cols[0].metric("Total Hours", f"{total_hours:.2f} hrs")
-    for i, (name, rate) in enumerate(hourly_rates.items()):
+    rate_list = list(hourly_rates.items())
+    metric_cols = st.columns(2 + len(rate_list))
+    metric_cols[0].metric("Total Hours", f"{total_hours:.2f} hrs")
+    metric_cols[1].metric("Total Break", f"{total_break:.2f} hrs")
+    for i, (name, rate) in enumerate(rate_list):
         pay = total_hours * rate
-        cols[i + 1].metric(f"@ ${rate:.2f}/hr ({name})", f"${pay:,.2f}")
+        metric_cols[i + 2].metric(f"@ ${rate:.2f}/hr ({name})", f"${pay:,.2f}")
 
     # ── Shifts table ───────────────────────────────────────────────────────
     st.markdown("### Shifts This Period")
     if period_df.empty:
         st.info("No shifts logged for this pay period yet.")
     else:
-
-        def _fmt_hm(h_float):
-            if pd.isna(h_float):
-                return ""
-            hrs = int(h_float)
-            mins = int(round((h_float - hrs) * 60))
-            return f"{hrs:02d} hrs {mins:02d} min"
-
         week1_mask = period_df["Date"].dt.date < (
             period_start + datetime.timedelta(days=7)
         )
@@ -131,8 +180,9 @@ def render():
             "Clock In",
             "Clock Out",
             "Status",
-            "Hours and Minutes",
-            "Hours",
+            "Work Hrs",
+            "Break",
+            "Shift",
         ]
 
         def _build_display(w_df):
@@ -142,25 +192,40 @@ def render():
             d["Date"] = d["Date"].dt.strftime("%m/%d/%Y")
             d["Clock In"] = d["Clock In"].dt.strftime("%H:%M")
             d["Clock Out"] = d["Clock Out"].dt.strftime("%H:%M")
-            d["Hours and Minutes"] = d["Hours"].apply(_fmt_hm)
-            d["Hours"] = d["Hours"].round(2)
+            d["Work Hrs"] = d["Hours"].apply(_fmt_hm)  # HH:MM
+            d["Break"] = d["Break"].apply(_fmt_hm)  # HH:MM
+            d["Shift"] = d["Hours"].apply(_fmt_hm)  # HH:MM (total shift)
             return d[VIEW_COLS]
 
         def _render_week(w_df, title, key):
-            """Render one week's data editor. Returns (orig, edited) DataFrames,
-            or (None, None) when the week has no data."""
+            """Render one week block with the new summary caption format."""
             if w_df.empty:
                 st.markdown(f"**{title}** — *No shifts logged*")
                 return None, None
 
-            w_total = w_df["Hours"].sum()
             st.markdown(f"**{title}**")
 
-            metrics_parts = [f"**Hours:** {w_total:.2f}"]
+            w_total = w_df["Hours"].sum()
+            w_break = w_df["Break"].sum()
+
+            # Build caption: Hours | Break | Rate1 pay | Rate2 pay | With break
+            parts = [f"Hours: {w_total:.2f}"]
+            parts.append(f"Break: {w_break:.2f}")
+            st.caption(" | ".join(parts))
+
+            parts = []
             for name, rate in hourly_rates.items():
-                w_pay = w_total * rate
-                metrics_parts.append(f"**{name} (\${rate:.2f})** = \${w_pay:,.2f}")
-            st.caption(" | ".join(metrics_parts))
+                parts.append(f"{name} (&#36;{rate:.2f}) = &#36;{w_total * rate:,.2f}")
+
+            # "With break" = pay on first rate including break hours
+            if rate_list:
+                first_rate = rate_list[0][1]
+                with_break_pay = (w_total + w_break) * first_rate
+                parts.append(
+                    f"With break (&#36;{first_rate:.2f}) = &#36;{with_break_pay:,.2f}"
+                )
+
+            st.caption(" | ".join(parts))
 
             orig = _build_display(w_df)
             edited = st.data_editor(
@@ -171,25 +236,37 @@ def render():
                 column_config={
                     "_SheetRow": None,
                     "Weekday": st.column_config.Column(disabled=True),
+                    "Shift": st.column_config.Column(disabled=True),
+                    "Work Hrs": st.column_config.TextColumn(
+                        "Work Hrs",
+                        help="Actual hours worked HH:MM — editable for Actual shifts",
+                    ),
+                    "Break": st.column_config.TextColumn(
+                        "Break", help="Break time HH:MM — editable for Scheduled shifts"
+                    ),
                     "Status": st.column_config.SelectboxColumn(
                         "Status", options=["Actual", "Scheduled"], required=True
                     ),
-                    "Hours and Minutes": st.column_config.Column(disabled=True),
-                    "Hours": st.column_config.Column(disabled=True),
                 },
             )
             return orig, edited
 
-        col_w1, col_w2 = st.columns(2)
-        w1_title = f"Week 1 ({period_start.strftime('%m/%d')} – {(period_start + datetime.timedelta(days=6)).strftime('%m/%d')})"
-        w2_title = f"Week 2 ({(period_start + datetime.timedelta(days=7)).strftime('%m/%d')} – {(period_start + datetime.timedelta(days=13)).strftime('%m/%d')})"
+        w1_title = (
+            f"Week 1 ({period_start.strftime('%m/%d')} – "
+            f"{(period_start + datetime.timedelta(days=6)).strftime('%m/%d')})"
+        )
+        w2_title = (
+            f"Week 2 ({(period_start + datetime.timedelta(days=7)).strftime('%m/%d')} – "
+            f"{(period_start + datetime.timedelta(days=13)).strftime('%m/%d')})"
+        )
 
+        col_w1, col_w2 = st.columns(2)
         with col_w1:
             orig_w1, edited_w1 = _render_week(week1_df, w1_title, "wk1_editor")
         with col_w2:
             orig_w2, edited_w2 = _render_week(week2_df, w2_title, "wk2_editor")
 
-        # ── Save Shift Changes button ───────────────────────────────────────
+        # ── Save Shift Changes ──────────────────────────────────────────────
         if st.button("💾 Save Shift Changes", key="save_shift_changes", type="primary"):
             from utils.gsheets import update_work_hours_row
 
@@ -210,14 +287,40 @@ def render():
                             or old["Clock In"] != new["Clock In"]
                             or old["Clock Out"] != new["Clock Out"]
                             or old["Status"] != new["Status"]
+                            or old["Work Hrs"] != new["Work Hrs"]
+                            or old["Break"] != new["Break"]
                         ):
-                            update_work_hours_row(
-                                int(old["_SheetRow"]),
-                                new["Date"],
-                                new["Clock In"],
-                                new["Clock Out"],
-                                new["Status"],
-                            )
+                            status_val = new["Status"]
+                            if status_val == "Actual":
+                                wh = new["Work Hrs"]
+                                if _parse_hhmm(wh) is None:
+                                    st.warning(
+                                        f"Row {idx+1}: Work Hrs '{wh}' is not valid HH:MM — skipped."
+                                    )
+                                    continue
+                                update_work_hours_row(
+                                    int(old["_SheetRow"]),
+                                    new["Date"],
+                                    new["Clock In"],
+                                    new["Clock Out"],
+                                    status_val,
+                                    work_hours=wh,
+                                )
+                            else:
+                                br = new["Break"]
+                                if _parse_hhmm(br) is None:
+                                    st.warning(
+                                        f"Row {idx+1}: Break '{br}' is not valid HH:MM — skipped."
+                                    )
+                                    continue
+                                update_work_hours_row(
+                                    int(old["_SheetRow"]),
+                                    new["Date"],
+                                    new["Clock In"],
+                                    new["Clock Out"],
+                                    status_val,
+                                    break_time=br,
+                                )
                             saved += 1
 
             if saved:
@@ -227,9 +330,11 @@ def render():
                 st.info("No changes detected.")
 
         st.markdown("---")
-        # Daily bar chart
-        fig = go.Figure(
+        # ── Daily bar chart ─────────────────────────────────────────────────
+        fig = go.Figure()
+        fig.add_trace(
             go.Bar(
+                name="Work Hours",
                 x=period_df["Date"].dt.strftime("%a %m/%d"),
                 y=period_df["Hours"].round(2),
                 marker_color="#6C63FF",
@@ -237,8 +342,19 @@ def render():
                 textposition="outside",
             )
         )
+        fig.add_trace(
+            go.Bar(
+                name="Break",
+                x=period_df["Date"].dt.strftime("%a %m/%d"),
+                y=period_df["Break"].round(2),
+                marker_color="#F5A623",
+                text=period_df["Break"].round(2),
+                textposition="outside",
+            )
+        )
         fig.update_layout(
             title="Hours Per Shift",
+            barmode="stack",
             xaxis_title="Date",
             yaxis_title="Hours",
             plot_bgcolor="rgba(0,0,0,0)",
