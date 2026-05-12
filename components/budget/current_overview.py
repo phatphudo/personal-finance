@@ -76,6 +76,7 @@ def render_overview(
     total_income = income_all["Amount"].sum() if not income_all.empty else 0.0
     total_spending = spending_all["Amount"].sum() if not spending_all.empty else 0.0
 
+    total_balance = 0.0
     total_networth = 0.0
     networth_all = pd.DataFrame()
     if not cc_df.empty:
@@ -98,15 +99,66 @@ def render_overview(
         cash_in_hand = cash_df["Amount"].sum() if not cash_df.empty else 0.0
         debit_bal = debit_df["Amount"].sum() if not debit_df.empty else 0.0
 
-        total_networth = cash_in_hand + debit_bal
+        total_balance = cash_in_hand + debit_bal
+
+    # Credit balance = total charges for the month (liability to subtract)
+    cr_month = _get_month_data(cred_df)
+    credit_balance = cr_month["Amount"].sum() if not cr_month.empty else 0.0
+
+    total_networth = total_balance - credit_balance
 
     st.markdown("---")
     st.markdown("### 📊 Monthly Overview")
 
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Total Networth", f"${total_networth:,.2f}")
-    m2.metric("Total Income", f"${total_income:,.2f}")
-    m3.metric("Total Spending", f"${total_spending:,.2f}")
+    net_flow = total_income - total_spending
+
+    grp1, grp2 = st.columns(2, gap="large")
+
+    # ── Group 1: Net Worth breakdown ─────────────────────────────────────────
+    with grp1:
+        st.caption("💰 Net Worth")
+        nw_left, nw_right = st.columns([1, 1])
+        with nw_right:
+            st.metric(
+                "Total Balance",
+                f"${total_balance:,.2f}",
+                help="Cash in hand + Debit balance",
+            )
+            st.metric(
+                "Credit Balance",
+                f"${credit_balance:,.2f}",
+                help="Outstanding credit card charges this month",
+            )
+        with nw_left:
+            # Spacer to vertically center against the two right-side metrics
+            st.write("")
+            st.write("")
+            st.metric(
+                "Total Networth",
+                f"${total_networth:,.2f}",
+                help="Total Balance − Credit Balance",
+            )
+
+    # ── Group 2: Cash Flow breakdown ──────────────────────────────────────────
+    with grp2:
+        st.caption("📈 Cash Flow")
+        cf_left, cf_right = st.columns([1, 1])
+        with cf_right:
+            st.metric("Total Income", f"${total_income:,.2f}")
+            st.metric("Total Spending", f"${total_spending:,.2f}")
+        with cf_left:
+            # Spacer to vertically center against the two right-side metrics
+            st.write("")
+            st.write("")
+            net_color = "normal" if net_flow >= 0 else "inverse"
+            net_delta = f"+${net_flow:,.2f}" if net_flow >= 0 else f"-${abs(net_flow):,.2f}"
+            st.metric(
+                "Net Flow",
+                f"${net_flow:,.2f}",
+                delta=net_delta,
+                delta_color=net_color,
+                help="Total Income − Total Spending",
+            )
 
     try:
         import plotly.express as px
