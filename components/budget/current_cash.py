@@ -13,6 +13,7 @@ from utils.gsheets import (
 
 _CAT_DEPOSIT_DEBIT = "Deposit to Debit"
 _CAT_ADD_VAULT = "Add to Vault"
+_CAT_WITHDRAWAL_CASH = "Withdrawal"  # auto-created when withdrawing from Debit
 
 
 # ── Cash section ──────────────────────────────────────────────────────────────
@@ -57,7 +58,20 @@ def render_cash(
     income_tx = _filter_month(ci_df)
     spending_tx = _filter_month(co_df)
 
-    total_income = income_tx["Amount"].sum() if not income_tx.empty else 0.0
+    # Separate withdrawal transfers from real income
+    withdrawal_inc_tx = (
+        income_tx[income_tx["Category"] == _CAT_WITHDRAWAL_CASH]
+        if not income_tx.empty
+        else pd.DataFrame()
+    )
+    regular_income_tx = (
+        income_tx[income_tx["Category"] != _CAT_WITHDRAWAL_CASH]
+        if not income_tx.empty
+        else pd.DataFrame()
+    )
+
+    total_income = regular_income_tx["Amount"].sum() if not regular_income_tx.empty else 0.0
+    total_withdrawal_in = withdrawal_inc_tx["Amount"].sum() if not withdrawal_inc_tx.empty else 0.0
 
     regular_spending_tx = (
         spending_tx[~spending_tx["Category"].isin([_CAT_DEPOSIT_DEBIT, _CAT_ADD_VAULT])]
@@ -97,7 +111,7 @@ def render_cash(
         st.session_state[override_key] = prev_actual
 
     remaining = st.session_state[override_key]
-    total_cash_in = remaining + total_income
+    total_cash_in = remaining + total_income + total_withdrawal_in
     total_cash_out = total_spending + total_deposit + total_vault
     expected_balance = total_cash_in - total_cash_out
 
@@ -133,7 +147,7 @@ def render_cash(
         f3.metric(
             "Total Cash In",
             f"${total_cash_in:,.2f}",
-            help="Previous month remaining + Total Income",
+            help="Previous month remaining + Total Income + Withdrawals from Debit",
         )
         f4.metric(
             "Total Cash Out",

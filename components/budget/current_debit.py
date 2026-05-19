@@ -2,6 +2,7 @@ import pandas as pd
 import streamlit as st
 
 from utils.gsheets import (
+    append_cash_in,
     append_debit_in,
     append_debit_out,
     update_debit_in_row,
@@ -11,6 +12,7 @@ from utils.gsheets import (
 )
 
 _CAT_CC_PAYMENT = "Credit Card Payment"
+_CAT_WITHDRAWAL = "Withdrawal from Debit"
 
 
 # ── Debit section ─────────────────────────────────────────────────────────────
@@ -67,18 +69,21 @@ def render_debit(
     total_in = total_income + total_deposit_in
 
     if not spending_tx.empty:
-        is_cc_payment = spending_tx["Category"] == _CAT_CC_PAYMENT
-        regular_spending_tx = spending_tx[~is_cc_payment]
-        cc_payment_tx = spending_tx[is_cc_payment]
+        is_excluded = spending_tx["Category"].isin([_CAT_CC_PAYMENT, _CAT_WITHDRAWAL])
+        regular_spending_tx = spending_tx[~is_excluded]
+        cc_payment_tx = spending_tx[spending_tx["Category"] == _CAT_CC_PAYMENT]
+        withdrawal_tx = spending_tx[spending_tx["Category"] == _CAT_WITHDRAWAL]
     else:
         regular_spending_tx = pd.DataFrame()
         cc_payment_tx = pd.DataFrame()
+        withdrawal_tx = pd.DataFrame()
 
     total_spending = (
         regular_spending_tx["Amount"].sum() if not regular_spending_tx.empty else 0.0
     )
     total_cc_payment = cc_payment_tx["Amount"].sum() if not cc_payment_tx.empty else 0.0
-    total_out = total_spending + total_cc_payment
+    total_withdrawal = withdrawal_tx["Amount"].sum() if not withdrawal_tx.empty else 0.0
+    total_out = total_spending + total_cc_payment + total_withdrawal
 
     # ── Remaining from previous month ──────────────────────────────────────
     prev_actual = 0.0
@@ -129,7 +134,7 @@ def render_debit(
         )
         f3, f4 = st.columns(2)
         f3.metric("Total In", f"${total_in:,.2f}", help="Including Cash Deposits")
-        f4.metric("Total Out", f"${total_out:,.2f}", help="Including CC Payments")
+        f4.metric("Total Out", f"${total_out:,.2f}", help="Including CC Payments & Withdrawals")
 
     with col_bal:
         st.markdown("##### 📊 Balance Snapshot")
@@ -264,7 +269,7 @@ def _build_debit_out_display(df_tx, expense_cats):
     if not expense_cats:
         expense_cats = ["Other"]
 
-    valid_cats = expense_cats + [_CAT_CC_PAYMENT]
+    valid_cats = expense_cats + [_CAT_CC_PAYMENT, _CAT_WITHDRAWAL]
     default_cat = expense_cats[0]
 
     def _normalise(cat):
@@ -361,7 +366,7 @@ def _debit_out_editor(df_tx, month_key, today, expense_cats):
 
     orig = _build_debit_out_display(df_tx, expense_cats)
 
-    options = expense_cats + [_CAT_CC_PAYMENT]
+    options = expense_cats + [_CAT_CC_PAYMENT, _CAT_WITHDRAWAL]
 
     edited = st.data_editor(
         orig,
@@ -430,6 +435,20 @@ def _sync_debit_out_changes(orig, edited, month_key, expense_cats):
                     cat,
                     float(row["Amount"]),
                 )
+                if cat == _CAT_WITHDRAWAL:
+                    # Auto-create a matching Cash In transaction tagged "Withdrawal"
+                    desc = (
+                        f"From debit: {row['Description']}"
+                        if str(row["Description"]).strip()
+                        else "From debit"
+                    )
+                    append_cash_in(
+                        full_date,
+                        month_key,
+                        desc,
+                        "Withdrawal",
+                        float(row["Amount"]),
+                    )
                 saved += 1
 
     if saved:

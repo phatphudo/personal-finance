@@ -32,7 +32,7 @@ def render_overview(
     cr_spend = _get_month_data(cred_df)
 
     # Exclude internal / non-spending
-    _EXCLUDE_SPENDING = ["Deposit to Debit", "Add to Vault", "Credit Card Payment"]
+    _EXCLUDE_SPENDING = ["Deposit to Debit", "Add to Vault", "Credit Card Payment", "Withdrawal from Debit"]
     if not co_spend.empty and "Category" in co_spend.columns:
         co_spend = co_spend[~co_spend["Category"].isin(_EXCLUDE_SPENDING)].copy()
     if not do_spend.empty and "Category" in do_spend.columns:
@@ -55,8 +55,8 @@ def render_overview(
     ci_inc = _get_month_data(ci_df)
     di_inc = _get_month_data(di_df)
 
-    # Exclude deposits from income
-    _EXCLUDE_INCOME = ["Deposit"]
+    # Exclude deposits and withdrawals from income (they are internal transfers)
+    _EXCLUDE_INCOME = ["Deposit", "Withdrawal"]
     if not ci_inc.empty and "Category" in ci_inc.columns:
         ci_inc = ci_inc[~ci_inc["Category"].isin(_EXCLUDE_INCOME)].copy()
     if not di_inc.empty and "Category" in di_inc.columns:
