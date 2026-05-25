@@ -1,10 +1,21 @@
+import datetime
+
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from utils.gsheets import read_settings, read_work_hours
-from utils.helpers import get_all_pay_periods, get_pay_period_label
+from components.settings import get_default_rates
+from utils.gsheets import (
+    get_period_rates,
+    read_pay_periods,
+    read_settings,
+    read_work_hours,
+)
+from utils.helpers import (
+    get_all_pay_periods,
+    get_pay_period_label,
+    get_pay_period_start,
+)
 
 
 def render():
@@ -13,6 +24,7 @@ def render():
     try:
         df = read_work_hours()
         settings = read_settings()
+        read_pay_periods()  # warm up cache
     except Exception as e:
         st.error(f"Could not load data: {e}")
         return
@@ -21,23 +33,64 @@ def render():
         st.info("No work hours data found. Log some shifts first.")
         return
 
-    hourly_rates: dict[str, float] = {}
-    rate_names = settings.get("Hourly Rate Names", [])
-    rate_values = settings.get("Hourly Rate Values", [])
-    for name, val in zip(rate_names, rate_values):
-        try:
-            hourly_rates[str(name)] = float(val)
-        except (ValueError, TypeError):
-            pass
+    default_cur, default_exp = get_default_rates(settings)
 
-    all_periods = get_all_pay_periods(df)
+    # Exclude the current (potentially incomplete) pay period
+    current_period_start = get_pay_period_start(datetime.date.today())
+    all_periods = [p for p in get_all_pay_periods(df) if p != current_period_start]
+
+    if not all_periods:
+        st.info("No completed pay periods to compare yet.")
+        return
+
     period_labels = {get_pay_period_label(p): p for p in all_periods}
     all_labels = list(period_labels.keys())
 
+    # ── Build rows helper ──────────────────────────────────────────────────
+    def _build_rows(starts: list) -> pd.DataFrame:
+        rows = []
+        for start in starts:
+            end = start + pd.Timedelta(days=13)
+            mask = (df["Date"].dt.date >= start) & (df["Date"].dt.date <= end)
+            pdf = df[mask]
+            total_hours = pdf["Hours"].sum()
+            total_break = pdf["Break"].sum()
+            cur_rate, _ = get_period_rates(start, default_cur, default_exp)
+            rows.append({
+                "Period":       get_pay_period_label(start),
+                "Hours":        round(total_hours, 2),
+                "Break (hrs)":  round(total_break, 2),
+                "Rate ($/hr)":  cur_rate,
+                "Paycheck ($)": round(total_hours * cur_rate, 2),
+            })
+        return pd.DataFrame(rows)
+
+    all_rows_df = _build_rows(all_periods)
+
+    # ── All-time metrics (above selector) ─────────────────────────────────
+    st.markdown("---")
+    st.markdown("#### 📈 All-Time")
+
+    col_h, col_p = st.columns(2)
+    with col_h:
+        st.markdown("**Hours Worked**")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Average", f"{all_rows_df['Hours'].mean():.2f}")
+        m2.metric("Min",     f"{all_rows_df['Hours'].min():.2f}")
+        m3.metric("Max",     f"{all_rows_df['Hours'].max():.2f}")
+    with col_p:
+        st.markdown("**Estimated Pay**")
+        m4, m5, m6 = st.columns(3)
+        m4.metric("Average", f"${all_rows_df['Paycheck ($)'].mean():,.2f}")
+        m5.metric("Min",     f"${all_rows_df['Paycheck ($)'].min():,.2f}")
+        m6.metric("Max",     f"${all_rows_df['Paycheck ($)'].max():,.2f}")
+
+    # ── Period selector ────────────────────────────────────────────────────
+    st.markdown("---")
     selected_labels = st.multiselect(
         "Select Pay Periods to Compare",
         all_labels,
-        default=all_labels[: min(4, len(all_labels))],
+        default=all_labels[: min(10, len(all_labels))],
         key="wh_compare_periods",
     )
 
@@ -46,76 +99,70 @@ def render():
         return
 
     selected_starts = [period_labels[lbl] for lbl in selected_labels]
+    sel_df = _build_rows(selected_starts)
 
-    # ── Build comparison dataframe ─────────────────────────────────────────
-    rows = []
-    for start in selected_starts:
-        end = start + pd.Timedelta(days=13)
-        mask = (df["Date"].dt.date >= start) & (df["Date"].dt.date <= end)
-        period_df = df[mask]
-        total_hours = period_df["Hours"].sum()
-        row = {
-            "Period": get_pay_period_label(start),
-            "Hours": round(total_hours, 2),
-        }
-        for name, rate in hourly_rates.items():
-            row[f"${rate:.2f} ({name})"] = round(total_hours * rate, 2)
-        rows.append(row)
-
-    comparison_df = pd.DataFrame(rows)
+    # ── Selected-period metrics ────────────────────────────────────────────
+    st.markdown("#### 🔍 Selected Periods")
+    col_sh, col_sp = st.columns(2)
+    with col_sh:
+        st.markdown("**Hours Worked**")
+        s1, s2, s3 = st.columns(3)
+        s1.metric("Average", f"{sel_df['Hours'].mean():.2f}")
+        s2.metric("Min",     f"{sel_df['Hours'].min():.2f}")
+        s3.metric("Max",     f"{sel_df['Hours'].max():.2f}")
+    with col_sp:
+        st.markdown("**Estimated Pay**")
+        s4, s5, s6 = st.columns(3)
+        s4.metric("Average", f"${sel_df['Paycheck ($)'].mean():,.2f}")
+        s5.metric("Min",     f"${sel_df['Paycheck ($)'].min():,.2f}")
+        s6.metric("Max",     f"${sel_df['Paycheck ($)'].max():,.2f}")
 
     # ── Summary table ──────────────────────────────────────────────────────
-    st.dataframe(comparison_df, width='stretch', hide_index=True)
+    st.markdown("---")
+    st.dataframe(
+        sel_df.style.format({
+            "Hours":        "{:.2f}",
+            "Break (hrs)":  "{:.2f}",
+            "Rate ($/hr)":  "${:.2f}",
+            "Paycheck ($)": "${:,.2f}",
+        }),
+        width="stretch",
+        hide_index=True,
+    )
+
+    # ── Shared layout ──────────────────────────────────────────────────────
+    _LAYOUT = dict(
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font_color="#e0e0e0",
+        height=360,
+        margin=dict(t=50, b=70),
+        xaxis_tickangle=-30,
+        xaxis_title="Pay Period",
+    )
 
     # ── Hours bar chart ────────────────────────────────────────────────────
     fig_hours = go.Figure(
         go.Bar(
-            x=comparison_df["Period"],
-            y=comparison_df["Hours"],
+            x=sel_df["Period"],
+            y=sel_df["Hours"],
             marker_color="#6C63FF",
-            text=comparison_df["Hours"],
+            text=sel_df["Hours"].apply(lambda v: f"{v:.1f} h"),
             textposition="outside",
         )
     )
-    fig_hours.update_layout(
-        title="Total Hours Per Pay Period",
-        xaxis_title="Pay Period",
-        yaxis_title="Hours",
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
-        font_color="#e0e0e0",
-        height=350,
-        margin=dict(t=40, b=60),
-        xaxis_tickangle=-30,
-    )
-    st.plotly_chart(fig_hours, width='stretch')
+    fig_hours.update_layout(title="Hours Worked Per Pay Period", yaxis_title="Hours", **_LAYOUT)
+    st.plotly_chart(fig_hours, width="stretch")
 
-    # ── Pay comparison chart (grouped bars, one per rate) ──────────────────
-    if hourly_rates:
-        rate_cols = [c for c in comparison_df.columns if c.startswith("$")]
-        fig_pay = go.Figure()
-        colors = px.colors.qualitative.Pastel
-        for i, col in enumerate(rate_cols):
-            fig_pay.add_trace(
-                go.Bar(
-                    name=col,
-                    x=comparison_df["Period"],
-                    y=comparison_df[col],
-                    marker_color=colors[i % len(colors)],
-                    text=comparison_df[col].apply(lambda v: f"${v:,.0f}"),
-                    textposition="outside",
-                )
-            )
-        fig_pay.update_layout(
-            barmode="group",
-            title="Estimated Pay Per Period (by Rate)",
-            xaxis_title="Pay Period",
-            yaxis_title="USD",
-            plot_bgcolor="rgba(0,0,0,0)",
-            paper_bgcolor="rgba(0,0,0,0)",
-            font_color="#e0e0e0",
-            height=400,
-            margin=dict(t=40, b=60),
-            xaxis_tickangle=-30,
+    # ── Estimated Pay bar chart ────────────────────────────────────────────
+    fig_pay = go.Figure(
+        go.Bar(
+            x=sel_df["Period"],
+            y=sel_df["Paycheck ($)"],
+            marker_color="#4CAF93",
+            text=sel_df["Paycheck ($)"].apply(lambda v: f"${v:,.0f}"),
+            textposition="outside",
         )
-        st.plotly_chart(fig_pay, width='stretch')
+    )
+    fig_pay.update_layout(title="Estimated Paycheck Per Pay Period (Current Rate)", yaxis_title="USD", **_LAYOUT)
+    st.plotly_chart(fig_pay, width="stretch")

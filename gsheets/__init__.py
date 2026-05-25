@@ -23,6 +23,7 @@ from gsheets.debit_in_out import (
     update_debit_in_row,
     update_debit_out_row,
 )
+from gsheets.pay_periods import get_period_rates, read_pay_periods, upsert_pay_period_rates
 from gsheets.settings import read_settings, write_settings
 from gsheets.starting_balances import read_starting_balances, upsert_starting_balance
 from gsheets.work_hours import append_work_hours, read_work_hours, update_work_hours_row
@@ -55,6 +56,10 @@ __all__ = [
     # starting balances
     "read_starting_balances",
     "upsert_starting_balance",
+    # pay periods
+    "read_pay_periods",
+    "upsert_pay_period_rates",
+    "get_period_rates",
     # work hours
     "read_work_hours",
     "append_work_hours",

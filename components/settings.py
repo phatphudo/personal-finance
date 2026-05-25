@@ -4,8 +4,8 @@ from utils.gsheets import read_settings, write_settings
 
 # The canonical ordered list of setting keys
 SETTING_KEYS = [
-    "Hourly Rate Names",
-    "Hourly Rate Values",
+    "Default Current Rate",
+    "Default Expected Rate",
     "Cash Sources",
     "Bank Accounts",
     "Credit Cards",
@@ -14,14 +14,30 @@ SETTING_KEYS = [
 ]
 
 SETTING_DESCRIPTIONS = {
-    "Hourly Rate Names": "Labels for each hourly rate (e.g. Base, Raise, Holiday)",
-    "Hourly Rate Values": "Dollar value for each rate — must match order above (e.g. 18.50)",
+    "Default Current Rate": "Default current hourly rate for new pay periods (e.g. 18.50)",
+    "Default Expected Rate": "Default expected/raise hourly rate for new pay periods (e.g. 19.00)",
     "Cash Sources": "Your cash buckets (e.g. Vault, Wallet, Reserve)",
     "Bank Accounts": "Bank / debit accounts (e.g. Main Checking)",
     "Credit Cards": "Credit card names (e.g. Amex Blue, Chase Sapphire)",
     "Spending Categories": "Expense categories (e.g. Rent, Groceries, Auto)",
     "Income Categories": "Income types (e.g. Paycheck, Tips, Cashback)",
 }
+
+DEFAULT_CURRENT_RATE = 19.50
+DEFAULT_EXPECTED_RATE = 20.00
+
+
+def get_default_rates(settings: dict) -> tuple[float, float]:
+    """Return (default_current_rate, default_expected_rate) from settings."""
+    try:
+        cur = float(settings.get("Default Current Rate", [DEFAULT_CURRENT_RATE])[0])
+    except (TypeError, ValueError, IndexError):
+        cur = DEFAULT_CURRENT_RATE
+    try:
+        exp = float(settings.get("Default Expected Rate", [DEFAULT_EXPECTED_RATE])[0])
+    except (TypeError, ValueError, IndexError):
+        exp = DEFAULT_EXPECTED_RATE
+    return cur, exp
 
 
 def _list_editor(label: str, description: str, items: list[str], key: str) -> list[str]:
@@ -42,7 +58,7 @@ def _list_editor(label: str, description: str, items: list[str], key: str) -> li
 def render():
     st.markdown("## ⚙️ Settings")
     st.markdown(
-        "Configure your hourly rates, accounts, and spending categories here. "
+        "Configure your default hourly rates, accounts, and spending categories here. "
         "Changes are saved directly to your Google Sheet."
     )
 
@@ -52,38 +68,42 @@ def render():
         st.error(f"Could not load settings: {e}")
         settings = {}
 
-    # Ensure all keys exist (first-run or empty sheet)
+    # Ensure all keys exist
     for key in SETTING_KEYS:
         if key not in settings:
             settings[key] = []
 
     st.markdown("---")
 
-    # ── Hourly Rates (paired columns) ─────────────────────────────────────
-    st.markdown("### ⏱️ Hourly Rates")
+    # ── Default Hourly Rates ──────────────────────────────────────────────
+    st.markdown("### ⏱️ Default Hourly Rates")
     st.caption(
-        "Add one rate per line. The **Names** and **Values** lists must have the same number of entries."
+        "These are the **default** rates used when a new pay period is created. "
+        "You can override rates per-period in the **Current Pay Period** view."
     )
-    col_name, col_val = st.columns(2)
-    with col_name:
-        new_rate_names = _list_editor(
-            "Hourly Rate Names",
-            SETTING_DESCRIPTIONS["Hourly Rate Names"],
-            settings["Hourly Rate Names"],
-            key="set_rate_names",
+    default_cur, default_exp = get_default_rates(settings)
+    col_cur, col_exp = st.columns(2)
+    with col_cur:
+        st.markdown("**Default Current Rate ($)**")
+        new_cur = st.number_input(
+            "Default Current Rate",
+            value=default_cur,
+            min_value=0.0,
+            step=0.25,
+            format="%.2f",
+            label_visibility="collapsed",
+            key="set_default_cur_rate",
         )
-    with col_val:
-        new_rate_values = _list_editor(
-            "Hourly Rate Values",
-            SETTING_DESCRIPTIONS["Hourly Rate Values"],
-            settings["Hourly Rate Values"],
-            key="set_rate_values",
-        )
-
-    if len(new_rate_names) != len(new_rate_values):
-        st.warning(
-            f"⚠️ Mismatch: {len(new_rate_names)} name(s) vs {len(new_rate_values)} value(s). "
-            "Make sure both lists have the same number of lines."
+    with col_exp:
+        st.markdown("**Default Expected Rate ($)**")
+        new_exp = st.number_input(
+            "Default Expected Rate",
+            value=default_exp,
+            min_value=0.0,
+            step=0.25,
+            format="%.2f",
+            label_visibility="collapsed",
+            key="set_default_exp_rate",
         )
 
     # ── Cash sources ──────────────────────────────────────────────────────
@@ -92,7 +112,7 @@ def render():
     new_cash = _list_editor(
         "Cash Sources",
         SETTING_DESCRIPTIONS["Cash Sources"],
-        settings["Cash Sources"],
+        settings.get("Cash Sources", []),
         key="set_cash",
     )
 
@@ -102,7 +122,7 @@ def render():
     new_banks = _list_editor(
         "Bank Accounts",
         SETTING_DESCRIPTIONS["Bank Accounts"],
-        settings["Bank Accounts"],
+        settings.get("Bank Accounts", []),
         key="set_banks",
     )
 
@@ -112,7 +132,7 @@ def render():
     new_cards = _list_editor(
         "Credit Cards",
         SETTING_DESCRIPTIONS["Credit Cards"],
-        settings["Credit Cards"],
+        settings.get("Credit Cards", []),
         key="set_cards",
     )
 
@@ -124,23 +144,23 @@ def render():
         new_income_cats = _list_editor(
             "Income Categories",
             SETTING_DESCRIPTIONS["Income Categories"],
-            settings["Income Categories"],
+            settings.get("Income Categories", []),
             key="set_income_cats",
         )
     with col_exp:
         new_expense_cats = _list_editor(
             "Spending Categories",
             SETTING_DESCRIPTIONS["Spending Categories"],
-            settings["Spending Categories"],
+            settings.get("Spending Categories", []),
             key="set_expense_cats",
         )
 
     # ── Save ──────────────────────────────────────────────────────────────
     st.markdown("---")
-    if st.button("💾 Save All Settings", type="primary", width='stretch'):
+    if st.button("💾 Save All Settings", type="primary", width="stretch"):
         updated = {
-            "Hourly Rate Names": new_rate_names,
-            "Hourly Rate Values": new_rate_values,
+            "Default Current Rate": [new_cur],
+            "Default Expected Rate": [new_exp],
             "Cash Sources": new_cash,
             "Bank Accounts": new_banks,
             "Credit Cards": new_cards,

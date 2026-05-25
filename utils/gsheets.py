@@ -11,6 +11,7 @@ SCOPES = [
 TAB_CASH_COUNTS = "Cash Counts"
 TAB_SETTINGS = "Settings"
 TAB_WORK_HOURS = "Work Hours"
+TAB_PAY_PERIODS = "Pay Periods"
 TAB_STARTING_BALANCES = "Monthly Starting Balances"
 TAB_CASH_IN = "Cash In"
 TAB_CASH_OUT = "Cash Out"
@@ -45,7 +46,9 @@ def get_or_create_worksheet(tab_name: str) -> gspread.Worksheet:
         ws = spreadsheet.add_worksheet(title=tab_name, rows=100, cols=20)
         # Add default headers for known tabs
         if tab_name == TAB_WORK_HOURS:
-            ws.append_row(["Date", "Clock In", "Clock Out", "Status", "Work Hours", "Break"])
+            ws.append_row(["Date", "Clock In", "Clock Out", "Status", "Work Hours", "Break", "Pay Period"])
+        elif tab_name == TAB_PAY_PERIODS:
+            ws.append_row(["Pay Period", "Current Rate", "Expected Rate"])
         elif tab_name == TAB_STARTING_BALANCES:
             ws.append_row(["Month", "Account", "Starting Balance"])
         elif tab_name in (
@@ -64,6 +67,7 @@ _ALL_TABS = [
     TAB_CASH_COUNTS,
     TAB_SETTINGS,
     TAB_WORK_HOURS,
+    TAB_PAY_PERIODS,
     TAB_STARTING_BALANCES,
     TAB_CASH_IN,
     TAB_CASH_OUT,
@@ -134,12 +138,14 @@ from gsheets import (  # noqa: E402
     append_debit_in,
     append_debit_out,
     append_work_hours,
+    get_period_rates,
     read_cash_counts,
     read_cash_in,
     read_cash_out,
     read_credit_tx,
     read_debit_in,
     read_debit_out,
+    read_pay_periods,
     read_settings,
     read_starting_balances,
     read_work_hours,
@@ -150,6 +156,7 @@ from gsheets import (  # noqa: E402
     update_debit_out_row,
     update_work_hours_row,
     upsert_cash_count,
+    upsert_pay_period_rates,
     upsert_starting_balance,
     write_settings,
 )
@@ -165,6 +172,9 @@ __all__ = [
     "read_work_hours",
     "append_work_hours",
     "update_work_hours_row",
+    "read_pay_periods",
+    "upsert_pay_period_rates",
+    "get_period_rates",
     "read_starting_balances",
     "upsert_starting_balance",
     "read_cash_counts",
@@ -185,3 +195,4 @@ __all__ = [
     "append_credit_tx",
     "update_credit_tx_row",
 ]
+

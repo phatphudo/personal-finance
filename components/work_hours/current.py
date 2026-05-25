@@ -4,7 +4,14 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from utils.gsheets import append_work_hours, read_settings, read_work_hours
+from components.settings import get_default_rates
+from utils.gsheets import (
+    append_work_hours,
+    get_period_rates,
+    read_settings,
+    read_work_hours,
+    upsert_pay_period_rates,
+)
 from utils.helpers import (
     get_all_pay_periods,
     get_pay_period_label,
@@ -62,16 +69,8 @@ def render():
         st.error(f"Could not load data: {e}")
         return
 
-    hourly_rates: dict[str, float] = {}
-    rate_names = settings.get("Hourly Rate Names", [])
-    rate_values = settings.get("Hourly Rate Values", [])
-    for name, val in zip(rate_names, rate_values):
-        try:
-            hourly_rates[str(name)] = float(val)
-        except (ValueError, TypeError):
-            pass
-
     today = datetime.date.today()
+    default_cur, default_exp = get_default_rates(settings)
 
     st.markdown("---")
     with st.expander("➕ Log New Shift", expanded=False):
@@ -149,18 +148,36 @@ def render():
     else:
         period_df = pd.DataFrame()
 
+    # ── Rate editor for this period ─────────────────────────────────────────
+    cur_rate, exp_rate = get_period_rates(period_start, default_cur, default_exp)
+    with st.expander("⚙️ Pay Rates for this Period", expanded=False):
+        col_rc, col_re, col_save = st.columns([1, 1, 1])
+        new_cur = col_rc.number_input(
+            "Current Rate ($/hr)", value=cur_rate, min_value=0.0, step=0.25,
+            format="%.2f", key=f"cur_rate_{period_start}"
+        )
+        new_exp = col_re.number_input(
+            "Expected Rate ($/hr)", value=exp_rate, min_value=0.0, step=0.25,
+            format="%.2f", key=f"exp_rate_{period_start}"
+        )
+        col_save.markdown("&nbsp;")  # spacer
+        if col_save.button("💾 Save Rates", key=f"save_rates_{period_start}", type="primary"):
+            with st.spinner("Saving rates…"):
+                upsert_pay_period_rates(period_start, new_cur, new_exp)
+            st.success(f"Rates saved: Current ${new_cur:.2f} | Expected ${new_exp:.2f}")
+            st.rerun()
+        cur_rate, exp_rate = new_cur, new_exp  # use edited values immediately
+
     total_hours = period_df["Hours"].sum() if not period_df.empty else 0.0
     total_break = period_df["Break"].sum() if not period_df.empty else 0.0
 
     # ── Pay summary metrics ────────────────────────────────────────────────
     st.markdown("---")
-    rate_list = list(hourly_rates.items())
-    metric_cols = st.columns(2 + len(rate_list))
+    metric_cols = st.columns(4)
     metric_cols[0].metric("Total Hours", f"{total_hours:.2f} hrs")
     metric_cols[1].metric("Total Break", f"{total_break:.2f} hrs")
-    for i, (name, rate) in enumerate(rate_list):
-        pay = total_hours * rate
-        metric_cols[i + 2].metric(f"@ ${rate:.2f}/hr ({name})", f"${pay:,.2f}")
+    metric_cols[2].metric(f"Current (${cur_rate:.2f}/hr)", f"${total_hours * cur_rate:,.2f}")
+    metric_cols[3].metric(f"Expected (${exp_rate:.2f}/hr)", f"${total_hours * exp_rate:,.2f}")
 
     # ── Shifts table ───────────────────────────────────────────────────────
     st.markdown("### Shifts This Period")
@@ -208,24 +225,16 @@ def render():
             w_total = w_df["Hours"].sum()
             w_break = w_df["Break"].sum()
 
-            # Build caption: Hours | Break | Rate1 pay | Rate2 pay | With break
+            # Build caption: Hours | Break | Current pay | Expected pay | With break
             parts = [f"Hours: {w_total:.2f}"]
             parts.append(f"Break: {w_break:.2f}")
-            st.caption(" | ".join(parts))
-
-            parts = []
-            for name, rate in hourly_rates.items():
-                parts.append(f"{name} (&#36;{rate:.2f}) = &#36;{w_total * rate:,.2f}")
-
-            # "With break" = pay on first rate including break hours
-            if rate_list:
-                first_rate = rate_list[0][1]
-                with_break_pay = (w_total + w_break) * first_rate
-                parts.append(
-                    f"With break (&#36;{first_rate:.2f}) = &#36;{with_break_pay:,.2f}"
-                )
+            parts.append(f"Current (&#36;{cur_rate:.2f}) = &#36;{w_total * cur_rate:,.2f}")
+            parts.append(f"Expected (&#36;{exp_rate:.2f}) = &#36;{w_total * exp_rate:,.2f}")
+            with_break_pay = (w_total + w_break) * cur_rate
+            parts.append(f"With break (&#36;{cur_rate:.2f}) = &#36;{with_break_pay:,.2f}")
 
             st.caption(" | ".join(parts))
+
 
             orig = _build_display(w_df)
             edited = st.data_editor(
