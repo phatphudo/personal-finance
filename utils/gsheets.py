@@ -18,6 +18,7 @@ TAB_CASH_OUT = "Cash Out"
 TAB_DEBIT_IN = "Debit In"
 TAB_DEBIT_OUT = "Debit Out"
 TAB_CREDIT_TX = "Credit Transactions"
+TAB_AVAILABILITY = "Availability"
 
 @st.cache_resource(ttl=60)
 def get_client() -> gspread.Client:
@@ -49,6 +50,8 @@ def get_or_create_worksheet(tab_name: str) -> gspread.Worksheet:
             ws.append_row(["Date", "Clock In", "Clock Out", "Status", "Work Hours", "Break", "Pay Period"])
         elif tab_name == TAB_PAY_PERIODS:
             ws.append_row(["Pay Period", "Current Rate", "Expected Rate"])
+        elif tab_name == TAB_AVAILABILITY:
+            ws.append_row(["Day", "Clock In", "Clock Out", "Break"])
         elif tab_name == TAB_STARTING_BALANCES:
             ws.append_row(["Month", "Account", "Starting Balance"])
         elif tab_name in (
@@ -74,6 +77,7 @@ _ALL_TABS = [
     TAB_DEBIT_IN,
     TAB_DEBIT_OUT,
     TAB_CREDIT_TX,
+    TAB_AVAILABILITY,
 ]
 
 
@@ -139,6 +143,7 @@ from gsheets import (  # noqa: E402
     append_debit_out,
     append_work_hours,
     get_period_rates,
+    read_availability,
     read_cash_counts,
     read_cash_in,
     read_cash_out,
@@ -158,6 +163,7 @@ from gsheets import (  # noqa: E402
     upsert_cash_count,
     upsert_pay_period_rates,
     upsert_starting_balance,
+    write_availability,
     write_settings,
 )
 
@@ -169,6 +175,8 @@ __all__ = [
     # delegated to gsheets/
     "read_settings",
     "write_settings",
+    "read_availability",
+    "write_availability",
     "read_work_hours",
     "append_work_hours",
     "update_work_hours_row",
