@@ -182,7 +182,7 @@ with st.sidebar:
     elif tool == "💳 Budget Tracker":
         view = st.radio(
             "View",
-            ["Current Month", "Monthly Comparison"],
+            ["Current Month", "Monthly Comparison", "Deposit Tracker"],
             key="budget_view",
         )
     else:
@@ -213,6 +213,10 @@ else:
         from components.budget import current as budget_current
 
         budget_current.render()
+    elif view == "Deposit Tracker":
+        from components.budget import deposit_tracker
+
+        deposit_tracker.render()
     else:
         from components.budget import compare as budget_compare
 
