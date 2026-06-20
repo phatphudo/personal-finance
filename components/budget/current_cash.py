@@ -70,8 +70,12 @@ def render_cash(
         else pd.DataFrame()
     )
 
-    total_income = regular_income_tx["Amount"].sum() if not regular_income_tx.empty else 0.0
-    total_withdrawal_in = withdrawal_inc_tx["Amount"].sum() if not withdrawal_inc_tx.empty else 0.0
+    total_income = (
+        regular_income_tx["Amount"].sum() if not regular_income_tx.empty else 0.0
+    )
+    total_withdrawal_in = (
+        withdrawal_inc_tx["Amount"].sum() if not withdrawal_inc_tx.empty else 0.0
+    )
 
     regular_spending_tx = (
         spending_tx[~spending_tx["Category"].isin([_CAT_DEPOSIT_DEBIT, _CAT_ADD_VAULT])]

@@ -182,7 +182,7 @@ with st.sidebar:
     elif tool == "💳 Budget Tracker":
         view = st.radio(
             "View",
-            ["Current Month", "Monthly Comparison", "Deposit Tracker"],
+            ["Current Month", "Yearly Overview", "Deposit Tracker"],
             key="budget_view",
         )
     else:

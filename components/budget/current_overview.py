@@ -56,7 +56,7 @@ def render_overview(
     di_inc = _get_month_data(di_df)
 
     # Exclude deposits and withdrawals from income (they are internal transfers)
-    _EXCLUDE_INCOME = ["Deposit", "Withdrawal"]
+    _EXCLUDE_INCOME = ["Deposit", "Withdrawal", "Transfer"]
     if not ci_inc.empty and "Category" in ci_inc.columns:
         ci_inc = ci_inc[~ci_inc["Category"].isin(_EXCLUDE_INCOME)].copy()
     if not di_inc.empty and "Category" in di_inc.columns:

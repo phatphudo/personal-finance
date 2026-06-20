@@ -51,14 +51,17 @@ def render_debit(
     income_tx = _filter_month(di_df)
     spending_tx = _filter_month(do_df)
 
-    # Distinguish standard income vs cash deposits
+    # Distinguish standard income vs cash deposits vs family wire transfers
     if not income_tx.empty:
         is_deposit = income_tx["Description"].str.startswith("From cash", na=False)
-        regular_income_tx = income_tx[~is_deposit]
+        is_transfer = income_tx["Category"] == "Transfer"
+        regular_income_tx = income_tx[~is_deposit & ~is_transfer]
         deposit_inc_tx = income_tx[is_deposit]
+        transfer_inc_tx = income_tx[is_transfer & ~is_deposit]  # Transfer, not a deposit
     else:
         regular_income_tx = pd.DataFrame()
         deposit_inc_tx = pd.DataFrame()
+        transfer_inc_tx = pd.DataFrame()
 
     total_income = (
         regular_income_tx["Amount"].sum() if not regular_income_tx.empty else 0.0
@@ -66,7 +69,10 @@ def render_debit(
     total_deposit_in = (
         deposit_inc_tx["Amount"].sum() if not deposit_inc_tx.empty else 0.0
     )
-    total_in = total_income + total_deposit_in
+    total_transfer_in = (
+        transfer_inc_tx["Amount"].sum() if not transfer_inc_tx.empty else 0.0
+    )
+    total_in = total_income + total_deposit_in + total_transfer_in
 
     if not spending_tx.empty:
         is_excluded = spending_tx["Category"].isin([_CAT_CC_PAYMENT, _CAT_WITHDRAWAL])
@@ -125,7 +131,7 @@ def render_debit(
         f1.metric(
             "Total Income",
             f"${total_income:,.2f}",
-            help="All income excluding Cash Deposits",
+            help="Real income only — excludes Cash Deposits & Transfers (wire transfers)",
         )
         f2.metric(
             "Total Spending",
@@ -133,7 +139,7 @@ def render_debit(
             help="All spending excluding CC Payments",
         )
         f3, f4 = st.columns(2)
-        f3.metric("Total In", f"${total_in:,.2f}", help="Including Cash Deposits")
+        f3.metric("Total In", f"${total_in:,.2f}", help="Income + Cash Deposits + Transfers")
         f4.metric("Total Out", f"${total_out:,.2f}", help="Including CC Payments & Withdrawals")
 
     with col_bal:
