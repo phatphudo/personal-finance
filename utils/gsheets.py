@@ -50,7 +50,7 @@ def get_or_create_worksheet(tab_name: str) -> gspread.Worksheet:
         if tab_name == TAB_WORK_HOURS:
             ws.append_row(["Date", "Clock In", "Clock Out", "Status", "Work Hours", "Break", "Pay Period"])
         elif tab_name == TAB_PAY_PERIODS:
-            ws.append_row(["Pay Period", "Current Rate", "Expected Rate"])
+            ws.append_row(["Pay Period", "Current Rate", "Expected Rate", "Total Hours"])
         elif tab_name == TAB_AVAILABILITY:
             ws.append_row(["Day", "Clock In", "Clock Out", "Break"])
         elif tab_name == TAB_DEPOSIT_SUGGESTIONS:
@@ -167,6 +167,7 @@ from gsheets import (  # noqa: E402
     update_work_hours_row,
     upsert_cash_count,
     upsert_pay_period_rates,
+    upsert_pay_period_info,
     upsert_starting_balance,
     write_all_suggestions,
     write_availability,
@@ -190,6 +191,7 @@ __all__ = [
     "update_work_hours_row",
     "read_pay_periods",
     "upsert_pay_period_rates",
+    "upsert_pay_period_info",
     "get_period_rates",
     "read_starting_balances",
     "upsert_starting_balance",

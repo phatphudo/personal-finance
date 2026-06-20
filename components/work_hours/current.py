@@ -9,8 +9,10 @@ from utils.gsheets import (
     append_work_hours,
     get_period_rates,
     read_availability,
+    read_pay_periods,
     read_settings,
     read_work_hours,
+    upsert_pay_period_info,
     upsert_pay_period_rates,
     write_availability,
 )
@@ -67,6 +69,7 @@ def render():
     try:
         df = read_work_hours()
         settings = read_settings()
+        df_pp = read_pay_periods()
     except Exception as e:
         st.error(f"Could not load data: {e}")
         return
@@ -206,6 +209,36 @@ def render():
 
     total_hours = period_df["Hours"].sum() if not period_df.empty else 0.0
     total_break = period_df["Break"].sum() if not period_df.empty else 0.0
+
+    # ── Sync current rate and total hours to pay periods database ──────────
+    try:
+        df_pp = read_pay_periods()
+        match = df_pp[df_pp["Pay Period"] == period_start]
+        db_hours = None
+        db_rate = None
+        if not match.empty:
+            db_hours = match.iloc[0]["Total Hours"]
+            db_rate = match.iloc[0]["Current Rate"]
+
+        cur_rate_rounded = round(cur_rate, 2)
+        db_rate_rounded = round(float(db_rate), 2) if (db_rate is not None and pd.notna(db_rate) and db_rate != "") else None
+        rate_changed = db_rate_rounded != cur_rate_rounded
+
+        hours_changed = False
+        computed_rounded = None
+        if not period_df.empty:
+            computed_rounded = round(total_hours, 2)
+            db_rounded = round(float(db_hours), 2) if (db_hours is not None and pd.notna(db_hours) and db_hours != "") else None
+            hours_changed = db_rounded != computed_rounded
+
+        if rate_changed or hours_changed:
+            upsert_pay_period_info(
+                period_start,
+                current_rate=cur_rate_rounded if rate_changed else None,
+                total_hours=computed_rounded if hours_changed else None,
+            )
+    except Exception:
+        pass
 
     # ── Pay summary metrics ────────────────────────────────────────────────
     st.markdown("---")

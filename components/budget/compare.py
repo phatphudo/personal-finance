@@ -51,7 +51,7 @@ def render():
     selected_labels = st.multiselect(
         "Select Months to Compare",
         list(month_options.keys()),
-        default=list(month_options.keys())[: min(6, len(month_options))],
+        default=list(month_options.keys())[: min(12, len(month_options))],
         key="budget_compare_months",
     )
 
@@ -144,7 +144,13 @@ def render():
                 nw = month_cc["Amount"].sum()
 
         trend_rows.append(
-            {"Month": month_label(m), "Income": inc, "Expenses": exp, "Net": inc - exp, "Networth": nw}
+            {
+                "Month": month_label(m),
+                "Income": inc,
+                "Expenses": exp,
+                "Net": inc - exp,
+                "Networth": nw,
+            }
         )
 
     trend_df = pd.DataFrame(trend_rows)
@@ -295,6 +301,4 @@ def render():
             display_cat = cat_df.copy()
             for col in display_cat.columns:
                 display_cat[col] = display_cat[col].map(fmt)
-            st.dataframe(
-                display_cat.reset_index(), width="stretch", hide_index=True
-            )
+            st.dataframe(display_cat.reset_index(), width="stretch", hide_index=True)

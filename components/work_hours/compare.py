@@ -24,20 +24,30 @@ def render():
     try:
         df = read_work_hours()
         settings = read_settings()
-        read_pay_periods()  # warm up cache
+        df_pp = read_pay_periods()
     except Exception as e:
         st.error(f"Could not load data: {e}")
         return
 
-    if df.empty:
+    if df.empty and df_pp.empty:
         st.info("No work hours data found. Log some shifts first.")
         return
+
+    if df.empty:
+        df = pd.DataFrame(columns=["Date", "Hours", "Break"])
+        df["Date"] = pd.to_datetime(df["Date"])
 
     default_cur, default_exp = get_default_rates(settings)
 
     # Exclude the current (potentially incomplete) pay period
     current_period_start = get_pay_period_start(datetime.date.today())
-    all_periods = [p for p in get_all_pay_periods(df) if p != current_period_start]
+    
+    # Get union of periods from both Work Hours and Pay Periods database
+    wh_periods = get_all_pay_periods(df) if not df.empty else []
+    pp_periods = df_pp["Pay Period"].dropna().tolist() if not df_pp.empty else []
+    
+    all_periods_set = set(wh_periods) | set(pp_periods)
+    all_periods = [p for p in sorted(all_periods_set, reverse=True) if p != current_period_start]
 
     if not all_periods:
         st.info("No completed pay periods to compare yet.")
@@ -48,13 +58,25 @@ def render():
 
     # ── Build rows helper ──────────────────────────────────────────────────
     def _build_rows(starts: list) -> pd.DataFrame:
+        pp_df = read_pay_periods()
         rows = []
         for start in starts:
             end = start + pd.Timedelta(days=13)
+            
+            # Look up saved Total Hours from pay period database
+            match = pp_df[pp_df["Pay Period"] == start]
+            db_hours = None
+            if not match.empty:
+                val = match.iloc[0]["Total Hours"]
+                if pd.notna(val) and val != "":
+                    db_hours = float(val)
+
+            # Filter work hours df for break
             mask = (df["Date"].dt.date >= start) & (df["Date"].dt.date <= end)
             pdf = df[mask]
-            total_hours = pdf["Hours"].sum()
-            total_break = pdf["Break"].sum()
+
+            total_hours = db_hours if db_hours is not None else 0.0
+            total_break = pdf["Break"].sum() if not pdf.empty else 0.0
             cur_rate, _ = get_period_rates(start, default_cur, default_exp)
             rows.append({
                 "Period":       get_pay_period_label(start),
@@ -90,7 +112,7 @@ def render():
     selected_labels = st.multiselect(
         "Select Pay Periods to Compare",
         all_labels,
-        default=all_labels[: min(10, len(all_labels))],
+        default=all_labels,
         key="wh_compare_periods",
     )
 

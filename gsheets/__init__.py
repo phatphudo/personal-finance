@@ -25,7 +25,7 @@ from gsheets.debit_in_out import (
 )
 from gsheets.availability import read_availability, write_availability
 from gsheets.deposit_suggestions import read_deposit_suggestions, write_all_suggestions
-from gsheets.pay_periods import get_period_rates, read_pay_periods, upsert_pay_period_rates
+from gsheets.pay_periods import get_period_rates, read_pay_periods, upsert_pay_period_rates, upsert_pay_period_info
 from gsheets.settings import read_settings, write_settings
 from gsheets.starting_balances import read_starting_balances, upsert_starting_balance
 from gsheets.work_hours import append_work_hours, read_work_hours, update_work_hours_row
@@ -67,6 +67,7 @@ __all__ = [
     # pay periods
     "read_pay_periods",
     "upsert_pay_period_rates",
+    "upsert_pay_period_info",
     "get_period_rates",
     # work hours
     "read_work_hours",
